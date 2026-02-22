@@ -170,3 +170,19 @@ def test_convert_supports_multi_source_base64_subscriptions(monkeypatch) -> None
     assert resolved.status_code == 200
     assert "a.example.com" in resolved.text
     assert "b.example.com" in resolved.text
+
+
+def test_convert_result_url_defaults_to_https_for_public_host() -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/api/convert",
+        headers={"host": "convert.example.com"},
+        json={
+            "source": _make_ss_uri(),
+            "source_type": "text",
+            "target": "mihomo",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["result_url"].startswith("https://convert.example.com/r/")

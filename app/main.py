@@ -135,8 +135,16 @@ def _build_link_url(request: Request, token: str) -> str:
 
     forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
     forwarded_host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
-    if forwarded_proto and forwarded_host:
-        return f"{forwarded_proto}://{forwarded_host}{path}"
+    host = forwarded_host or request.headers.get("host", "").split(",")[0].strip()
+
+    if forwarded_proto and host:
+        return f"{forwarded_proto}://{host}{path}"
+
+    if host:
+        host_without_port = host.split(":", 1)[0].strip().lower()
+        local_hosts = {"127.0.0.1", "localhost", "::1", "testserver"}
+        scheme = "http" if host_without_port in local_hosts else "https"
+        return f"{scheme}://{host}{path}"
 
     return str(request.url_for("resolve_link", token=token))
 
