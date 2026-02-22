@@ -4,6 +4,7 @@ import asyncio
 import re
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -118,6 +119,25 @@ async def _load_acl_text(req: ConvertRequest) -> str:
 
 
 def _build_link_url(request: Request, token: str) -> str:
+    path = str(request.app.url_path_for("resolve_link", token=token))
+
+    origin = request.headers.get("origin", "").strip()
+    if origin:
+        parsed = urlparse(origin)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}{path}"
+
+    referer = request.headers.get("referer", "").strip()
+    if referer:
+        parsed = urlparse(referer)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}{path}"
+
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+    forwarded_host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}{path}"
+
     return str(request.url_for("resolve_link", token=token))
 
 
