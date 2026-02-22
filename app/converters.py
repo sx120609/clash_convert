@@ -36,6 +36,7 @@ RULE_TYPES = {
 }
 
 ALLOWED_BUILTIN_TARGETS = {"DIRECT", "REJECT", "REJECT-DROP", "GLOBAL", "PASS", "PROXY"}
+MESL_SELECT_NAME = "🎯 Select"
 
 
 @dataclass(slots=True)
@@ -433,15 +434,15 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
                     parsed.proxy_groups.append(sanitized)
 
         # Normalize MESL-like template entry group:
-        # 1) first group name MESL -> Select
+        # 1) first group name MESL -> 🎯 Select
         # 2) move Auto/Fallback to the top in first group
         if parsed.proxy_groups:
             first_group = parsed.proxy_groups[0]
             first_name = str(first_group.get("name", "")).strip()
             if first_name.lower() == "mesl":
                 is_mesl_template = True
-                first_group["name"] = "Select"
-                rename_group_map[first_name] = "Select"
+                first_group["name"] = MESL_SELECT_NAME
+                rename_group_map[first_name] = MESL_SELECT_NAME
             if isinstance(first_group.get("proxies"), list):
                 proxies = [str(item).strip() for item in first_group["proxies"] if str(item).strip()]
                 top: list[str] = []
@@ -459,12 +460,12 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
 
         # For MESL template groups in mainland usage:
         # - Apple/Bilibili/Microsoft/Steam groups default to DIRECT
-        # - other groups default to Select
-        # - every business select group must include both Select and DIRECT
+        # - other groups default to 🎯 Select
+        # - every business select group must include both 🎯 Select and DIRECT
         #   and pin them to first/second position.
         if is_mesl_template:
             direct_default_keywords = {"apple", "bilibili", "microsoft", "steam"}
-            loop_guard_group_names = {"select", "auto", "fallback"}
+            loop_guard_group_names = {"select", MESL_SELECT_NAME.lower(), "auto", "fallback"}
 
             def _is_direct_default_group(name: str) -> bool:
                 lower = name.lower()
@@ -489,7 +490,10 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
                 if not proxies:
                     proxies = []
 
-                select_item = next((item for item in proxies if item.lower() == "select"), None) or "Select"
+                select_item = next(
+                    (item for item in proxies if item.lower() in {"select", MESL_SELECT_NAME.lower()}),
+                    None,
+                ) or MESL_SELECT_NAME
                 direct_item = next((item for item in proxies if item.upper() == "DIRECT"), None) or "DIRECT"
                 rest = [item for item in proxies if item not in {select_item, direct_item}]
 

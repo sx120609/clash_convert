@@ -247,13 +247,13 @@ rules:
     assert warnings == []
     doc = yaml.safe_load(output)
     groups = {group["name"]: group for group in doc["proxy-groups"]}
-    select = groups["Select"]["proxies"]
+    select = groups["🎯 Select"]["proxies"]
     # Auto/Fallback are pinned to top; user node order follows.
     assert select[0] == "Auto"
     assert select[1] == "Fallback"
     assert select[2] == "ss-node"
     assert select[3] == "vmess-node"
-    assert doc["rules"][-1] == "MATCH,Select"
+    assert doc["rules"][-1] == "MATCH,🎯 Select"
 
 
 def test_mesl_template_group_defaults_select_or_direct() -> None:
@@ -293,11 +293,11 @@ rules:
     assert warnings == []
     doc = yaml.safe_load(output)
     groups = {group["name"]: group for group in doc["proxy-groups"]}
-    assert groups["🍎 Apple"]["proxies"][:2] == ["DIRECT", "Select"]
-    assert groups["📽️ Bilibili"]["proxies"][:2] == ["DIRECT", "Select"]
-    assert groups["🖥 Microsoft"]["proxies"][:2] == ["DIRECT", "Select"]
-    assert groups["🎮 Steam"]["proxies"][:2] == ["DIRECT", "Select"]
-    assert groups["🔍 Google"]["proxies"][:2] == ["Select", "DIRECT"]
-    # Loop guard groups should not inject Select to avoid Select<->Auto/Fallback cycles.
-    assert "Select" not in groups["Auto"]["proxies"]
-    assert "Select" not in groups["Fallback"]["proxies"]
+    assert groups["🍎 Apple"]["proxies"][:2] == ["DIRECT", "🎯 Select"]
+    assert groups["📽️ Bilibili"]["proxies"][:2] == ["DIRECT", "🎯 Select"]
+    assert groups["🖥 Microsoft"]["proxies"][:2] == ["DIRECT", "🎯 Select"]
+    assert groups["🎮 Steam"]["proxies"][:2] == ["DIRECT", "🎯 Select"]
+    assert groups["🔍 Google"]["proxies"][:2] == ["🎯 Select", "DIRECT"]
+    # Loop guard groups should not inject 🎯 Select to avoid 🎯 Select<->Auto/Fallback cycles.
+    assert "🎯 Select" not in groups["Auto"]["proxies"]
+    assert "🎯 Select" not in groups["Fallback"]["proxies"]
