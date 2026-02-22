@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.acl_presets import ACL_PRESETS, ACL_PRESET_MAP
 from app.converters import SUPPORTED_TARGETS, convert_nodes
+from app.models import ProxyNode
 from app.share_links import LinkStore
 from app.subscription import fetch_subscription, parse_subscription
 
@@ -60,7 +61,7 @@ def _split_source_urls(raw: str) -> list[str]:
     return urls
 
 
-async def _load_source_urls(raw: str) -> tuple[str, list[str], list[str]]:
+async def _load_source_urls(raw: str) -> tuple[list[str], list[str], list[str]]:
     urls = _split_source_urls(raw)
     if not urls:
         raise HTTPException(status_code=400, detail="source URL is empty")
@@ -84,18 +85,17 @@ async def _load_source_urls(raw: str) -> tuple[str, list[str], list[str]]:
         suffix = [f"... and {len(warnings) - 5} more fetch errors"] if len(warnings) > 5 else []
         raise HTTPException(status_code=400, detail={"warnings": head + suffix})
 
-    merged = "\n".join(payloads)
     if len(warnings) > 10:
         warnings = warnings[:10] + [f"... and {len(warnings) - 10} more fetch errors"]
-    return merged, warnings, ok_urls
+    return payloads, warnings, ok_urls
 
 
-async def _load_source(req: ConvertRequest) -> tuple[str, list[str], str | None]:
+async def _load_source(req: ConvertRequest) -> tuple[list[str], list[str], str | None]:
     source = req.source.strip()
     if req.source_type == "text":
-        return source, [], None
-    payload, warnings, urls = await _load_source_urls(source)
-    return payload, warnings, "|".join(urls)
+        return [source], [], None
+    payloads, warnings, urls = await _load_source_urls(source)
+    return payloads, warnings, "|".join(urls)
 
 
 async def _load_acl_text(req: ConvertRequest) -> str:
@@ -121,28 +121,48 @@ def _build_link_url(request: Request, token: str) -> str:
     return str(request.url_for("resolve_link", token=token))
 
 
-def _convert_payload(
-    payload: str,
+def _ensure_unique_names(nodes: list[ProxyNode]) -> None:
+    seen: dict[str, int] = {}
+    for node in nodes:
+        base_name = node.name.strip() or f"{node.type}-{node.server}:{node.port}"
+        index = seen.get(base_name, 0)
+        seen[base_name] = index + 1
+        node.name = base_name if index == 0 else f"{base_name}-{index + 1}"
+
+
+def _parse_payloads(payloads: list[str]) -> tuple[list[ProxyNode], list[str]]:
+    nodes: list[ProxyNode] = []
+    warnings: list[str] = []
+    for index, payload in enumerate(payloads, start=1):
+        parsed = parse_subscription(payload)
+        nodes.extend(parsed.nodes)
+        warnings.extend([f"source#{index}: {item}" for item in parsed.warnings])
+    _ensure_unique_names(nodes)
+    return nodes, warnings
+
+
+def _convert_payloads(
+    payloads: list[str],
     *,
     target: str,
     uri_as_base64: bool,
     acl_text: str,
 ) -> tuple[str, list[str], str, int]:
-    parsed = parse_subscription(payload)
-    if not parsed.nodes:
-        all_warnings = parsed.warnings or ["no valid nodes found in source payload"]
+    nodes, parse_warnings = _parse_payloads(payloads)
+    if not nodes:
+        all_warnings = parse_warnings or ["no valid nodes found in source payload"]
         raise HTTPException(status_code=400, detail={"warnings": all_warnings})
     try:
         output, target_warnings, mime = convert_nodes(
-            parsed.nodes,
+            nodes,
             target,
             uri_as_base64=uri_as_base64,
             acl_text=acl_text,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    warnings = parsed.warnings + target_warnings
-    return output, warnings, mime, len(parsed.nodes)
+    warnings = parse_warnings + target_warnings
+    return output, warnings, mime, len(nodes)
 
 
 @app.get("/", include_in_schema=False)
@@ -179,10 +199,10 @@ async def acl_presets() -> dict[str, object]:
 
 @app.post("/api/convert", response_model=ConvertResponse)
 async def convert(req: ConvertRequest, request: Request) -> ConvertResponse:
-    source_payload, source_warnings, source_spec = await _load_source(req)
+    source_payloads, source_warnings, source_spec = await _load_source(req)
     acl_text = await _load_acl_text(req)
-    output, warnings, mime, node_count = _convert_payload(
-        source_payload,
+    output, warnings, mime, node_count = _convert_payloads(
+        source_payloads,
         target=req.target,
         uri_as_base64=req.uri_as_base64,
         acl_text=acl_text,
@@ -227,15 +247,15 @@ async def resolve_link(token: str) -> PlainTextResponse:
     if not record.source_url:
         raise HTTPException(status_code=500, detail="invalid link record")
     try:
-        source_payload, _, _ = await _load_source_urls(record.source_url)
+        source_payloads, _, _ = await _load_source_urls(record.source_url)
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"failed to fetch source URL: {exc}") from exc
 
     try:
-        output, _, mime, _ = _convert_payload(
-            source_payload,
+        output, _, mime, _ = _convert_payloads(
+            source_payloads,
             target=record.target,
             uri_as_base64=record.uri_as_base64,
             acl_text=record.acl_text,
@@ -260,7 +280,7 @@ async def convert_subscription(
         raise HTTPException(status_code=400, detail=f"unsupported target: {target}")
 
     try:
-        source_payload, _, _ = await _load_source_urls(url)
+        source_payloads, _, _ = await _load_source_urls(url)
     except HTTPException:
         raise
     except Exception as exc:
@@ -282,8 +302,8 @@ async def convert_subscription(
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"failed to fetch acl URL: {exc}") from exc
 
-    output, _, mime, _ = _convert_payload(
-        source_payload,
+    output, _, mime, _ = _convert_payloads(
+        source_payloads,
         target=target,
         uri_as_base64=uri_as_base64,
         acl_text=acl_text,

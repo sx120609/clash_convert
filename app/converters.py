@@ -253,12 +253,18 @@ def _parse_custom_proxy_group(expr: str, node_names: list[str]) -> tuple[dict[st
     group_type = (parts[1] or "select").lower()
     rest = [item for item in parts[2:] if item]
 
+    def add_unique(target: list[str], items: list[str]) -> None:
+        for item in items:
+            if item and item not in target:
+                target.append(item)
+
     proxies: list[str] = []
+    regex_filters: list[str] = []
     test_url: str | None = None
     interval = 300
     for item in rest:
         if item.startswith("[]"):
-            proxies.append(item[2:].strip())
+            add_unique(proxies, [item[2:].strip()])
             continue
         if item.startswith("http://") or item.startswith("https://"):
             test_url = item
@@ -266,6 +272,15 @@ def _parse_custom_proxy_group(expr: str, node_names: list[str]) -> tuple[dict[st
         match = re.search(r"\d+", item)
         if match:
             interval = int(match.group(0))
+            continue
+        regex_filters.append(item)
+
+    for pattern in regex_filters:
+        try:
+            matched = [name for name in node_names if re.search(pattern, name)]
+        except re.error:
+            continue
+        add_unique(proxies, matched)
 
     if not proxies:
         proxies = list(node_names)
@@ -325,8 +340,6 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
 
     lines = [line.strip() for line in raw.replace("\ufeff", "").splitlines()]
     node_names = [node.name for node in nodes]
-    if "DIRECT" not in node_names:
-        node_names.append("DIRECT")
 
     is_acl4ssr = any(line.startswith("ruleset=") or line.startswith("custom_proxy_group=") for line in lines)
     if is_acl4ssr:

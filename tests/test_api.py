@@ -17,6 +17,11 @@ def _make_ss_uri_with_host(host: str, name: str) -> str:
     return f"ss://{user}@{host}:8388#{name}"
 
 
+def _make_base64_sub_for_host(host: str, name: str) -> str:
+    uri = _make_ss_uri_with_host(host, name) + "\n"
+    return base64.b64encode(uri.encode("utf-8")).decode("utf-8")
+
+
 def test_convert_returns_share_link_for_text_source() -> None:
     client = TestClient(app)
     response = client.post(
@@ -137,3 +142,30 @@ def test_sub_endpoint_supports_multi_source_urls(monkeypatch) -> None:
     assert response.status_code == 200
     assert "a.example.com" in response.text
     assert "b.example.com" in response.text
+
+
+def test_convert_supports_multi_source_base64_subscriptions(monkeypatch) -> None:
+    async def fake_fetch_subscription(url: str, timeout_sec: float = 15.0) -> str:  # noqa: ARG001
+        if "sub1" in url:
+            return _make_base64_sub_for_host("a.example.com", "a")
+        if "sub2" in url:
+            return _make_base64_sub_for_host("b.example.com", "b")
+        return _make_ss_uri()
+
+    monkeypatch.setattr("app.main.fetch_subscription", fake_fetch_subscription)
+    client = TestClient(app)
+    response = client.post(
+        "/api/convert",
+        json={
+            "source": "https://example.com/sub1\nhttps://example.com/sub2",
+            "source_type": "url",
+            "target": "mihomo",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["node_count"] == 2
+    resolved = client.get(payload["result_url"])
+    assert resolved.status_code == 200
+    assert "a.example.com" in resolved.text
+    assert "b.example.com" in resolved.text

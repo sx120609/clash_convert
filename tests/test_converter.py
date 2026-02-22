@@ -179,3 +179,24 @@ ruleset=PROXY,[]FINAL
     doc = yaml.safe_load(output)
     assert doc["proxy-groups"][0]["name"] == "PROXY"
     assert doc["rules"][-1] == "MATCH,PROXY"
+
+
+def test_mihomo_acl_regex_expands_manual_nodes() -> None:
+    text = "\n".join([_make_ss_uri(), _make_vmess_uri()])
+    parsed = parse_subscription(text)
+    acl = """
+[custom]
+custom_proxy_group=PROXY`select`[]AUTO`.*
+custom_proxy_group=AUTO`url-test`.*`http://www.gstatic.com/generate_204`300,,50
+ruleset=PROXY,[]FINAL
+"""
+    output, warnings, _ = convert_nodes(parsed.nodes, "mihomo", acl_text=acl)
+    assert warnings == []
+    doc = yaml.safe_load(output)
+    groups = {group["name"]: group for group in doc["proxy-groups"]}
+    assert "PROXY" in groups
+    assert "AUTO" in groups
+    # PROXY should include AUTO plus real node names expanded by regex .*
+    assert "AUTO" in groups["PROXY"]["proxies"]
+    assert any(name.startswith("ss-node") for name in groups["PROXY"]["proxies"])
+    assert any(name.startswith("vmess-node") for name in groups["PROXY"]["proxies"])
