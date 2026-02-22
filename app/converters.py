@@ -12,7 +12,7 @@ import yaml
 
 from app.models import ProxyNode
 
-SUPPORTED_TARGETS = {"mihomo", "sing-box", "uri"}
+SUPPORTED_TARGETS = {"mihomo", "sing-box", "surge", "uri"}
 
 RULE_TYPES = {
     "DOMAIN",
@@ -825,6 +825,144 @@ def render_sing_box(nodes: list[ProxyNode]) -> tuple[str, list[str]]:
     return json.dumps(config, ensure_ascii=False, indent=2), warnings
 
 
+def _quote_surge_value(value: Any) -> str:
+    text = str(value)
+    if any(ch in text for ch in [",", " ", "\t", '"']):
+        escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return text
+
+
+def _surge_safe_name(name: str, used: set[str]) -> str:
+    base = re.sub(r"[\r\n]", " ", name).strip()
+    if not base:
+        base = "proxy"
+    base = base.replace(",", "_").replace("=", "_")
+    final = base
+    index = 2
+    while final in used:
+        final = f"{base}-{index}"
+        index += 1
+    used.add(final)
+    return final
+
+
+def _surge_ws_opts(params: dict[str, Any]) -> tuple[list[str], str | None]:
+    network = str(params.get("network") or "tcp").lower()
+    if network in {"tcp", "none", ""}:
+        return [], None
+    if network != "ws":
+        return [], f"transport '{network}' is not supported by surge"
+
+    opts = ["ws=true"]
+    path = params.get("ws_opts", {}).get("path")
+    if path:
+        opts.append(f"ws-path={_quote_surge_value(path)}")
+    host = params.get("ws_opts", {}).get("headers", {}).get("Host")
+    if host:
+        opts.append(f"ws-headers={_quote_surge_value(f'Host:{host}')}")
+    return opts, None
+
+
+def render_surge(nodes: list[ProxyNode], *, acl_text: str | None = None) -> tuple[str, list[str]]:
+    warnings: list[str] = []
+    used_names: set[str] = set()
+    proxy_lines: list[str] = []
+    proxy_names: list[str] = []
+
+    for node in nodes:
+        params = node.params
+        surge_name = _surge_safe_name(node.name, used_names)
+        opts: list[str]
+        line: str | None = None
+
+        if node.type == "ss":
+            opts = [
+                f"encrypt-method={_quote_surge_value(params.get('cipher', 'aes-128-gcm'))}",
+                f"password={_quote_surge_value(params.get('password', ''))}",
+                "udp-relay=true",
+            ]
+            line = f"{surge_name} = ss, {node.server}, {node.port}, {', '.join(opts)}"
+        elif node.type == "vmess":
+            ws_opts, ws_warning = _surge_ws_opts(params)
+            if ws_warning:
+                warnings.append(f"{node.name}: {ws_warning}")
+                continue
+            opts = [f"username={_quote_surge_value(params.get('uuid', ''))}"]
+            if int(params.get("alter_id", 0)):
+                warnings.append(f"{node.name}: surge vmess ignores alter_id")
+            if params.get("tls"):
+                opts.append("tls=true")
+            if params.get("sni"):
+                opts.append(f"sni={_quote_surge_value(params['sni'])}")
+            if "skip_cert_verify" in params:
+                opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
+            opts.extend(ws_opts)
+            line = f"{surge_name} = vmess, {node.server}, {node.port}, {', '.join(opts)}"
+        elif node.type == "trojan":
+            ws_opts, ws_warning = _surge_ws_opts(params)
+            if ws_warning:
+                warnings.append(f"{node.name}: {ws_warning}")
+                continue
+            opts = [f"password={_quote_surge_value(params.get('password', ''))}"]
+            if params.get("sni"):
+                opts.append(f"sni={_quote_surge_value(params['sni'])}")
+            if "skip_cert_verify" in params:
+                opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
+            opts.extend(ws_opts)
+            line = f"{surge_name} = trojan, {node.server}, {node.port}, {', '.join(opts)}"
+        elif node.type == "http":
+            opts = []
+            if params.get("username"):
+                opts.append(f"username={_quote_surge_value(params['username'])}")
+            if params.get("password"):
+                opts.append(f"password={_quote_surge_value(params['password'])}")
+            if params.get("tls"):
+                opts.append("tls=true")
+            if "skip_cert_verify" in params:
+                opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
+            line = f"{surge_name} = http, {node.server}, {node.port}"
+            if opts:
+                line += f", {', '.join(opts)}"
+        elif node.type == "socks5":
+            opts = []
+            if params.get("username"):
+                opts.append(f"username={_quote_surge_value(params['username'])}")
+            if params.get("password"):
+                opts.append(f"password={_quote_surge_value(params['password'])}")
+            if params.get("tls"):
+                opts.append("tls=true")
+            if "skip_cert_verify" in params:
+                opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
+            line = f"{surge_name} = socks5, {node.server}, {node.port}"
+            if opts:
+                line += f", {', '.join(opts)}"
+        else:
+            warnings.append(f"{node.name}: {node.type} is not supported in surge output")
+            continue
+
+        proxy_lines.append(line)
+        proxy_names.append(surge_name)
+
+    group_members = list(dict.fromkeys(proxy_names + ["DIRECT"]))
+    group_line = f"PROXY = select, {', '.join(group_members)}"
+
+    sections = [
+        "[Proxy]",
+        *proxy_lines,
+        "",
+        "[Proxy Group]",
+        group_line,
+        "",
+        "[Rule]",
+        "FINAL,PROXY",
+        "",
+    ]
+    if acl_text and acl_text.strip():
+        warnings.append("ACL rules are currently applied only to Mihomo output.")
+    return "\n".join(sections), warnings
+
+
 def _node_to_uri(node: ProxyNode) -> str:
     if node.source_uri:
         return node.source_uri
@@ -963,6 +1101,9 @@ def convert_nodes(
         if acl_text and acl_text.strip():
             warnings.append("ACL rules are currently applied only to Mihomo output.")
         return output, warnings, "application/json; charset=utf-8"
+    if target == "surge":
+        output, warnings = render_surge(nodes, acl_text=acl_text)
+        return output, warnings, "text/plain; charset=utf-8"
     if target == "uri":
         warnings: list[str] = []
         if acl_text and acl_text.strip():

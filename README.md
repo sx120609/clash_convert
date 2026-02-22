@@ -1,4 +1,4 @@
-# Subscription Converter (Mihomo / Sing-box)
+# Subscription Converter (Mihomo / Sing-box / Surge)
 
 一个可直接运行的订阅转换 Web 应用，支持主流代理协议解析并转换到不同客户端格式。
 
@@ -12,6 +12,7 @@
 - 输出目标:
   - `mihomo` (`Clash` 系 YAML)
   - `sing-box` (JSON)
+  - `surge` (Surge `.conf`)
   - `uri` (URI 列表，可选 Base64)
 - ACL:
   - 支持直接选择 ACL 预设（ACL4SSR-sub 风格）
@@ -35,7 +36,7 @@ uvicorn app.main:app --reload --port 8000
 - `POST /api/convert`
   - `source`: 订阅 URL 或文本
   - `source_type`: `url` 或 `text`
-  - `target`: `mihomo` / `sing-box` / `uri`
+  - `target`: `mihomo` / `sing-box` / `surge` / `uri`
   - `uri_as_base64`: 仅对 `uri` 生效
   - `source_type=url` 时，`source` 支持多个 URL（换行或 `|` 分隔）
   - `acl_preset`: ACL 预设 ID（可用值见 `GET /api/acl-presets`）

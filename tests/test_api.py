@@ -186,3 +186,21 @@ def test_convert_result_url_defaults_to_https_for_public_host() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["result_url"].startswith("https://convert.example.com/r/")
+
+
+def test_convert_supports_surge_target() -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/api/convert",
+        json={
+            "source": _make_ss_uri(),
+            "source_type": "text",
+            "target": "surge",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    resolved = client.get(payload["result_url"])
+    assert resolved.status_code == 200
+    assert "[Proxy]" in resolved.text
+    assert "ss-node = ss, ss.example.com, 8388" in resolved.text

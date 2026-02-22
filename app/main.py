@@ -24,7 +24,7 @@ LINK_STORE = LinkStore(default_ttl_sec=6 * 3600, max_items=4000)
 app = FastAPI(
     title="Subscription Converter",
     version="0.1.0",
-    description="Convert subscription links between Mihomo/Clash, sing-box and URI bundle outputs.",
+    description="Convert subscription links between Mihomo/Clash, sing-box, Surge and URI bundle outputs.",
 )
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -33,7 +33,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 class ConvertRequest(BaseModel):
     source: str = Field(..., min_length=1)
     source_type: Literal["text", "url"] = "text"
-    target: Literal["mihomo", "sing-box", "uri"] = "mihomo"
+    target: Literal["mihomo", "sing-box", "surge", "uri"] = "mihomo"
     uri_as_base64: bool = False
     acl_preset: str | None = None
     acl_text: str | None = None

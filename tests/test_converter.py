@@ -99,6 +99,30 @@ def test_render_sing_box_json_with_ssr_warning() -> None:
     assert any("ssr" in warning for warning in warnings)
 
 
+def test_render_surge_conf_with_vless_warning() -> None:
+    text = "\n".join(
+        [
+            _make_ss_uri(),
+            "vless://22222222-2222-2222-2222-222222222222@vl.example.com:443?security=tls&type=ws&host=cdn.example.com&path=%2Fvless&sni=vl.example.com#vless-node",
+        ]
+    )
+    parsed = parse_subscription(text)
+    output, warnings, mime = convert_nodes(parsed.nodes, "surge")
+    assert mime.startswith("text/plain")
+    assert "[Proxy]" in output
+    assert "ss-node = ss, ss.example.com, 8388" in output
+    assert "[Proxy Group]" in output
+    assert "PROXY = select, ss-node, DIRECT" in output
+    assert any("vless" in warning for warning in warnings)
+
+
+def test_render_surge_ignores_acl_with_warning() -> None:
+    text = _make_ss_uri()
+    parsed = parse_subscription(text)
+    _, warnings, _ = convert_nodes(parsed.nodes, "surge", acl_text="MATCH,PROXY")
+    assert any("ACL rules are currently applied only to Mihomo output." in warning for warning in warnings)
+
+
 def test_render_uri_base64() -> None:
     text = "\n".join([_make_ss_uri(), _make_vmess_uri()])
     parsed = parse_subscription(text)
