@@ -19,6 +19,38 @@ LOG_FILE="$LOG_DIR/uvicorn.log"
 
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
+fix_debian_apt_sources() {
+  shopt -s nullglob
+  local files=(/etc/apt/sources.list /etc/apt/sources.list.d/*.list)
+  local f
+
+  echo "Trying to fix deprecated Debian source entries ..."
+
+  for f in "${files[@]}"; do
+    [[ -f "$f" ]] || continue
+    cp "$f" "${f}.bak.$(date +%s)" || true
+
+    # Old Debian security style: bullseye/updates
+    sed -i -E \
+      's#^([[:space:]]*deb(-src)?[[:space:]]+https?://security\.debian\.org)[[:space:]]+bullseye/updates([[:space:]].*)$#\1/debian-security bullseye-security\3#g' \
+      "$f"
+
+    # Disable broken bullseye-backports entries.
+    sed -i -E \
+      '/^[[:space:]]*deb(-src)?[[:space:]]+.*bullseye-backports/ s/^/# disabled by start.sh: /' \
+      "$f"
+  done
+}
+
+apt_update_with_retry() {
+  if apt-get update -y; then
+    return 0
+  fi
+
+  fix_debian_apt_sources
+  apt-get update -y
+}
+
 ensure_venv_support() {
   if "$BASE_PYTHON" -c "import ensurepip" >/dev/null 2>&1; then
     return 0
@@ -37,7 +69,7 @@ ensure_venv_support() {
 
     echo "Installing system package: python3-venv ..."
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -y
+    apt_update_with_retry
     apt-get install -y python3-venv || true
     if [[ -n "$py_ver" ]]; then
       apt-get install -y "python${py_ver}-venv" || true
