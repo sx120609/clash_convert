@@ -6,7 +6,7 @@ VENV_DIR="${VENV_DIR:-$ROOT_DIR/.venv}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 APP_MODULE="${APP_MODULE:-app.main:app}"
 HOST="${HOST:-0.0.0.0}"
-PORT="${PORT:-8000}"
+PORT="${PORT:-21502}"
 
 RUN_DIR="$ROOT_DIR/run"
 LOG_DIR="$ROOT_DIR/logs"
