@@ -254,3 +254,36 @@ rules:
     assert select[2] == "ss-node"
     assert select[3] == "vmess-node"
     assert doc["rules"][-1] == "MATCH,Select"
+
+
+def test_mesl_template_group_defaults_select_or_direct() -> None:
+    text = "\n".join([_make_ss_uri(), _make_vmess_uri()])
+    parsed = parse_subscription(text)
+    acl = """
+proxy-groups:
+  - name: MESL
+    type: select
+    proxies: [Fallback, Auto, DIRECT]
+  - name: ProxyService
+    type: select
+    proxies: [MESL, DIRECT]
+  - name: DomesticService
+    type: select
+    proxies: [DIRECT]
+  - name: Fallback
+    type: select
+    proxies: [DIRECT]
+  - name: Auto
+    type: select
+    proxies: [DIRECT]
+rules:
+  - DOMAIN-SUFFIX,google.com,ProxyService
+  - DOMAIN-SUFFIX,qq.com,DomesticService
+  - MATCH,MESL
+"""
+    output, warnings, _ = convert_nodes(parsed.nodes, "mihomo", acl_text=acl)
+    assert warnings == []
+    doc = yaml.safe_load(output)
+    groups = {group["name"]: group for group in doc["proxy-groups"]}
+    assert groups["ProxyService"]["proxies"][0] == "Select"
+    assert groups["DomesticService"]["proxies"][0] == "DIRECT"

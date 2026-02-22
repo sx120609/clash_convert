@@ -422,6 +422,7 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
             return out
 
         rename_group_map: dict[str, str] = {}
+        is_mesl_template = False
 
         if has_groups:
             for group in raw_groups:
@@ -438,6 +439,7 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
             first_group = parsed.proxy_groups[0]
             first_name = str(first_group.get("name", "")).strip()
             if first_name.lower() == "mesl":
+                is_mesl_template = True
                 first_group["name"] = "Select"
                 rename_group_map[first_name] = "Select"
             if isinstance(first_group.get("proxies"), list):
@@ -454,6 +456,37 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
             for group in parsed.proxy_groups:
                 if isinstance(group.get("proxies"), list):
                     group["proxies"] = [rename_group_map.get(item, item) for item in group["proxies"]]
+
+        # For MESL template groups in mainland usage:
+        # - groups that can proxy via Select default to Select
+        # - otherwise default to DIRECT
+        if is_mesl_template:
+            for group in parsed.proxy_groups:
+                group_name = str(group.get("name", "")).strip()
+                group_type = str(group.get("type", "select")).strip().lower()
+                if group_name.lower() == "select" or group_type not in group_types_with_proxies:
+                    continue
+                raw_proxies = group.get("proxies")
+                if not isinstance(raw_proxies, list):
+                    continue
+                proxies: list[str] = []
+                for item in raw_proxies:
+                    proxy = str(item).strip()
+                    if proxy and proxy not in proxies:
+                        proxies.append(proxy)
+                if not proxies:
+                    continue
+
+                select_item = next((item for item in proxies if item.lower() == "select"), None)
+                if select_item:
+                    group["proxies"] = [select_item] + [item for item in proxies if item != select_item]
+                    continue
+
+                direct_item = next((item for item in proxies if item.upper() == "DIRECT"), None)
+                if direct_item:
+                    group["proxies"] = [direct_item] + [item for item in proxies if item != direct_item]
+                else:
+                    group["proxies"] = ["DIRECT", *proxies]
 
         if not parsed.proxy_groups:
             parsed.proxy_groups = _default_mihomo_groups(nodes)
