@@ -460,10 +460,11 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
         # For MESL template groups in mainland usage:
         # - Apple/Bilibili/Microsoft/Steam groups default to DIRECT
         # - other groups default to Select
-        # - every selectable group (except Select itself) must include both Select and DIRECT
+        # - every business select group must include both Select and DIRECT
         #   and pin them to first/second position.
         if is_mesl_template:
             direct_default_keywords = {"apple", "bilibili", "microsoft", "steam"}
+            loop_guard_group_names = {"select", "auto", "fallback"}
 
             def _is_direct_default_group(name: str) -> bool:
                 lower = name.lower()
@@ -472,7 +473,10 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
             for group in parsed.proxy_groups:
                 group_name = str(group.get("name", "")).strip()
                 group_type = str(group.get("type", "select")).strip().lower()
-                if group_name.lower() == "select" or group_type not in group_types_with_proxies:
+                # Avoid introducing cyclic references in scheduler groups such as Auto/Fallback.
+                if group_name.lower() in loop_guard_group_names:
+                    continue
+                if group_type != "select":
                     continue
                 raw_proxies = group.get("proxies")
                 if not isinstance(raw_proxies, list):

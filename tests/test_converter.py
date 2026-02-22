@@ -298,3 +298,6 @@ rules:
     assert groups["🖥 Microsoft"]["proxies"][:2] == ["DIRECT", "Select"]
     assert groups["🎮 Steam"]["proxies"][:2] == ["DIRECT", "Select"]
     assert groups["🔍 Google"]["proxies"][:2] == ["Select", "DIRECT"]
+    # Loop guard groups should not inject Select to avoid Select<->Auto/Fallback cycles.
+    assert "Select" not in groups["Auto"]["proxies"]
+    assert "Select" not in groups["Fallback"]["proxies"]
