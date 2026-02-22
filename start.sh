@@ -27,6 +27,9 @@ ensure_venv_support() {
   echo "Missing Python venv support (ensurepip)."
 
   if command -v apt-get >/dev/null 2>&1; then
+    local py_ver
+    py_ver="$("$BASE_PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || true)"
+
     if [[ "$(id -u)" -ne 0 ]]; then
       echo "Please run as root (or use sudo): apt-get update && apt-get install -y python3-venv"
       exit 1
@@ -35,7 +38,10 @@ ensure_venv_support() {
     echo "Installing system package: python3-venv ..."
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -y
-    apt-get install -y python3-venv
+    apt-get install -y python3-venv || true
+    if [[ -n "$py_ver" ]]; then
+      apt-get install -y "python${py_ver}-venv" || true
+    fi
   else
     echo "Cannot auto-install venv support. Install python3-venv manually."
     exit 1
@@ -46,6 +52,13 @@ ensure_venv_support() {
     echo "Try installing version-specific package, e.g. python3.11-venv."
     exit 1
   fi
+}
+
+recreate_venv() {
+  ensure_venv_support
+  rm -rf "$VENV_DIR"
+  echo "Creating virtualenv at $VENV_DIR ..."
+  "$BASE_PYTHON" -m venv "$VENV_DIR"
 }
 
 ensure_runtime() {
@@ -59,14 +72,18 @@ ensure_runtime() {
   fi
 
   if [[ ! -x "$VENV_PYTHON" ]]; then
-    ensure_venv_support
-    echo "Creating virtualenv at $VENV_DIR ..."
-    "$BASE_PYTHON" -m venv "$VENV_DIR"
+    recreate_venv
   fi
 
   if ! "$VENV_PYTHON" -m pip --version >/dev/null 2>&1; then
-    echo "Bootstrapping pip ..."
-    "$VENV_PYTHON" -m ensurepip --upgrade
+    echo "Virtualenv is missing pip. Rebuilding virtualenv ..."
+    recreate_venv
+  fi
+
+  if ! "$VENV_PYTHON" -m pip --version >/dev/null 2>&1; then
+    echo "pip is still unavailable inside $VENV_DIR."
+    echo "Please run: apt-get update && apt-get install -y python3-venv python3-pip"
+    exit 1
   fi
 
   if ! "$VENV_PYTHON" -c "import uvicorn, fastapi" >/dev/null 2>&1; then
