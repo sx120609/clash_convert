@@ -13,6 +13,11 @@ class AclPreset:
 # Presets are aligned with ACL4SSR-sub common online options.
 ACL_PRESETS: list[AclPreset] = [
     AclPreset(
+        id="mesl_rules",
+        label="MESL规则",
+        url="https://em.mesl.cloud/ems/get?token=ffeafd47122ab3fe52682c39725b7ac5&flag=clash",
+    ),
+    AclPreset(
         id="acl4ssr_online_default",
         label="ACL4SSR_Online 默认版",
         url="https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online.ini",

@@ -35,6 +35,8 @@ RULE_TYPES = {
     "MATCH",
 }
 
+ALLOWED_BUILTIN_TARGETS = {"DIRECT", "REJECT", "REJECT-DROP", "GLOBAL", "PASS", "PROXY"}
+
 
 @dataclass(slots=True)
 class AclPolicy:
@@ -337,6 +339,159 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
     raw = (acl_text or "").strip()
     if not raw:
         return policy
+
+    def _extract_from_clash_template(raw_text: str) -> AclPolicy | None:
+        try:
+            doc = yaml.safe_load(raw_text)
+        except Exception:
+            return None
+        if not isinstance(doc, dict):
+            return None
+
+        raw_groups = doc.get("proxy-groups")
+        raw_rules = doc.get("rules")
+        raw_rule_providers = doc.get("rule-providers")
+        has_groups = isinstance(raw_groups, list)
+        has_rules = isinstance(raw_rules, list)
+        has_rule_providers = isinstance(raw_rule_providers, dict)
+        if not has_groups and not has_rules and not has_rule_providers:
+            return None
+
+        parsed = AclPolicy()
+        node_names = [node.name for node in nodes]
+        group_names = [
+            str(group.get("name")).strip()
+            for group in (raw_groups or [])
+            if isinstance(group, dict) and str(group.get("name", "")).strip()
+        ]
+        group_name_set = set(group_names)
+        group_types_with_proxies = {"select", "relay", "fallback", "url-test", "load-balance"}
+
+        def sanitize_group(group: dict[str, Any]) -> dict[str, Any] | None:
+            name = str(group.get("name", "")).strip()
+            if not name:
+                return None
+            out: dict[str, Any] = {
+                "name": name,
+                "type": str(group.get("type", "select")).strip().lower() or "select",
+            }
+            for key in (
+                "url",
+                "interval",
+                "strategy",
+                "tolerance",
+                "lazy",
+                "expected-status",
+                "max-failed-times",
+                "disable-udp",
+                "hidden",
+                "icon",
+            ):
+                if key in group:
+                    out[key] = group[key]
+
+            raw_proxies = group.get("proxies")
+            need_proxies = out["type"] in group_types_with_proxies
+            if isinstance(raw_proxies, list):
+                template_proxies: list[str] = []
+                for item in raw_proxies:
+                    proxy = str(item).strip()
+                    if not proxy:
+                        continue
+                    if (
+                        proxy in node_names
+                        or proxy in group_name_set
+                        or proxy in ALLOWED_BUILTIN_TARGETS
+                    ):
+                        if proxy not in template_proxies:
+                            template_proxies.append(proxy)
+                if need_proxies:
+                    # Keep user's original node order first, then append template-only items.
+                    proxies: list[str] = list(node_names)
+                    for proxy in template_proxies:
+                        if proxy not in proxies:
+                            proxies.append(proxy)
+                else:
+                    proxies = template_proxies
+                if need_proxies and not proxies:
+                    proxies = ["DIRECT"]
+                if proxies:
+                    out["proxies"] = proxies
+            elif need_proxies:
+                out["proxies"] = list(dict.fromkeys(node_names + ["DIRECT"]))
+            return out
+
+        rename_group_map: dict[str, str] = {}
+
+        if has_groups:
+            for group in raw_groups:
+                if not isinstance(group, dict):
+                    continue
+                sanitized = sanitize_group(group)
+                if sanitized:
+                    parsed.proxy_groups.append(sanitized)
+
+        # Normalize MESL-like template entry group:
+        # 1) first group name MESL -> Select
+        # 2) move Auto/Fallback to the top in first group
+        if parsed.proxy_groups:
+            first_group = parsed.proxy_groups[0]
+            first_name = str(first_group.get("name", "")).strip()
+            if first_name.lower() == "mesl":
+                first_group["name"] = "Select"
+                rename_group_map[first_name] = "Select"
+            if isinstance(first_group.get("proxies"), list):
+                proxies = [str(item).strip() for item in first_group["proxies"] if str(item).strip()]
+                top: list[str] = []
+                for preferred in ("Auto", "Fallback"):
+                    for item in proxies:
+                        if item.lower() == preferred.lower() and item not in top:
+                            top.append(item)
+                rest = [item for item in proxies if item not in top]
+                first_group["proxies"] = top + rest
+
+        if rename_group_map:
+            for group in parsed.proxy_groups:
+                if isinstance(group.get("proxies"), list):
+                    group["proxies"] = [rename_group_map.get(item, item) for item in group["proxies"]]
+
+        if not parsed.proxy_groups:
+            parsed.proxy_groups = _default_mihomo_groups(nodes)
+        default_rule_target = parsed.proxy_groups[0]["name"] if parsed.proxy_groups else "PROXY"
+
+        valid_targets = {
+            *(group["name"] for group in parsed.proxy_groups if isinstance(group, dict) and group.get("name")),
+            *ALLOWED_BUILTIN_TARGETS,
+        }
+
+        def normalize_rule_target(rule: str) -> str | None:
+            parts = [part.strip() for part in rule.split(",")]
+            if not parts:
+                return None
+            rtype = parts[0].upper()
+            target_index = 1 if rtype == "MATCH" else 2
+            if len(parts) <= target_index:
+                return None
+            parts[target_index] = rename_group_map.get(parts[target_index], parts[target_index])
+            if parts[target_index] not in valid_targets:
+                parts[target_index] = default_rule_target
+            return ",".join(parts)
+
+        if has_rules:
+            for item in raw_rules:
+                if not isinstance(item, str):
+                    continue
+                normalized = normalize_rule_target(item.strip())
+                if normalized:
+                    parsed.rules.append(normalized)
+
+        if has_rule_providers:
+            parsed.rule_providers = dict(raw_rule_providers)
+        return parsed
+
+    extracted = _extract_from_clash_template(raw)
+    if extracted:
+        return extracted
 
     lines = [line.strip() for line in raw.replace("\ufeff", "").splitlines()]
     node_names = [node.name for node in nodes]

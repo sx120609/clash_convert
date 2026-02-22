@@ -200,3 +200,57 @@ ruleset=PROXY,[]FINAL
     assert "AUTO" in groups["PROXY"]["proxies"]
     assert any(name.startswith("ss-node") for name in groups["PROXY"]["proxies"])
     assert any(name.startswith("vmess-node") for name in groups["PROXY"]["proxies"])
+
+
+def test_mihomo_acl_extracts_from_clash_template() -> None:
+    text = "\n".join([_make_ss_uri(), _make_vmess_uri()])
+    parsed = parse_subscription(text)
+    acl = """
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies: [UnknownNode, DIRECT]
+rules:
+  - DOMAIN-SUFFIX,example.com,Proxy
+  - MATCH,UnknownGroup
+"""
+    output, warnings, _ = convert_nodes(parsed.nodes, "mihomo", acl_text=acl)
+    assert warnings == []
+    doc = yaml.safe_load(output)
+    groups = {group["name"]: group for group in doc["proxy-groups"]}
+    assert "Proxy" in groups
+    assert "DIRECT" in groups["Proxy"]["proxies"]
+    assert any(name.startswith("ss-node") for name in groups["Proxy"]["proxies"])
+    assert any(name.startswith("vmess-node") for name in groups["Proxy"]["proxies"])
+    assert "DOMAIN-SUFFIX,example.com,Proxy" in doc["rules"]
+    assert doc["rules"][-1] == "MATCH,Proxy"
+
+
+def test_mihomo_acl_template_keeps_original_node_order_first() -> None:
+    text = "\n".join([_make_ss_uri(), _make_vmess_uri()])
+    parsed = parse_subscription(text)
+    acl = """
+proxy-groups:
+  - name: MESL
+    type: select
+    proxies: [Fallback, Auto, DIRECT]
+  - name: Fallback
+    type: select
+    proxies: [DIRECT]
+  - name: Auto
+    type: select
+    proxies: [DIRECT]
+rules:
+  - MATCH,MESL
+"""
+    output, warnings, _ = convert_nodes(parsed.nodes, "mihomo", acl_text=acl)
+    assert warnings == []
+    doc = yaml.safe_load(output)
+    groups = {group["name"]: group for group in doc["proxy-groups"]}
+    select = groups["Select"]["proxies"]
+    # Auto/Fallback are pinned to top; user node order follows.
+    assert select[0] == "Auto"
+    assert select[1] == "Fallback"
+    assert select[2] == "ss-node"
+    assert select[3] == "vmess-node"
+    assert doc["rules"][-1] == "MATCH,Select"

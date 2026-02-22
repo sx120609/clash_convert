@@ -75,6 +75,7 @@ def test_acl_presets_endpoint() -> None:
     assert "items" in payload
     assert len(payload["items"]) > 0
     assert payload["items"][0]["id"]
+    assert any(item["id"] == "mesl_rules" for item in payload["items"])
 
 
 def test_convert_supports_acl_preset(monkeypatch) -> None:

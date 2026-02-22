@@ -15,6 +15,7 @@
   - `uri` (URI 列表，可选 Base64)
 - ACL:
   - 支持直接选择 ACL 预设（ACL4SSR-sub 风格）
+  - 内置 `MESL规则` 预设（从指定 Clash 配置提取规则/分组）
   - 支持 Clash 规则行（如 `DOMAIN-SUFFIX,google.com,PROXY`）
   - 支持 ACL4SSR 常见 `custom_proxy_group=` / `ruleset=` 语法（主要用于 Mihomo 输出）
 
