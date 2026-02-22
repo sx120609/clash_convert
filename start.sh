@@ -21,25 +21,47 @@ mkdir -p "$RUN_DIR" "$LOG_DIR"
 
 fix_debian_apt_sources() {
   shopt -s nullglob
-  local files=(/etc/apt/sources.list /etc/apt/sources.list.d/*.list)
-  local f
+  local files=(/etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources)
+  local f backup_dir ts backup_name
 
   echo "Trying to fix deprecated Debian source entries ..."
+  backup_dir="/tmp/startsh-apt-backup"
+  mkdir -p "$backup_dir"
+  ts="$(date +%s)"
+
+  # Cleanup old backups accidentally created in sources.list.d by earlier script versions.
+  find /etc/apt/sources.list.d -maxdepth 1 -type f -name "*.bak.*" -delete 2>/dev/null || true
 
   for f in "${files[@]}"; do
     [[ -f "$f" ]] || continue
-    cp "$f" "${f}.bak.$(date +%s)" || true
+    backup_name="$(echo "$f" | sed 's#/#_#g')"
+    cp "$f" "$backup_dir/${backup_name}.${ts}.bak" || true
 
-    # Old Debian security style: bullseye/updates
-    sed -i -E \
-      's#^([[:space:]]*deb(-src)?[[:space:]]+https?://security\.debian\.org)[[:space:]]+bullseye/updates([[:space:]].*)$#\1/debian-security bullseye-security\3#g' \
-      "$f"
-
-    # Disable broken bullseye-backports entries.
-    sed -i -E \
-      '/^[[:space:]]*deb(-src)?[[:space:]]+.*bullseye-backports/ s/^/# disabled by start.sh: /' \
-      "$f"
+    if [[ "$f" == *.sources ]]; then
+      # deb822-style sources
+      sed -i -E \
+        's#^([[:space:]]*URIs:[[:space:]]*)https?://security\.debian\.org([[:space:]]*)$#\1http://security.debian.org/debian-security\2#g' \
+        "$f"
+      sed -i -E \
+        '/^[[:space:]]*Suites:[[:space:]]*/ s/\bbullseye\/updates\b/bullseye-security/g' \
+        "$f"
+      # Drop bullseye-backports token from Suites.
+      sed -i -E \
+        '/^[[:space:]]*Suites:[[:space:]]*/ { s/\bbullseye-backports\b//g; s/[[:space:]]+/ /g; s/[[:space:]]+$//g; }' \
+        "$f"
+    else
+      # legacy .list-style sources
+      sed -i -E \
+        's#^([[:space:]]*deb(-src)?([[:space:]]+\[[^]]+\])?[[:space:]]+https?://security\.debian\.org)(/debian-security)?[[:space:]]+bullseye/updates([[:space:]].*)$#\1/debian-security bullseye-security\5#g' \
+        "$f"
+      # Disable broken bullseye-backports entries.
+      sed -i -E \
+        '/^[[:space:]]*deb(-src)?([[:space:]]+\[[^]]+\])?[[:space:]]+.*bullseye-backports/ s/^/# disabled by start.sh: /' \
+        "$f"
+    fi
   done
+
+  echo "APT source backups saved to: $backup_dir"
 }
 
 apt_update_with_retry() {
@@ -48,7 +70,13 @@ apt_update_with_retry() {
   fi
 
   fix_debian_apt_sources
-  apt-get update -y
+  if apt-get update -y; then
+    return 0
+  fi
+
+  echo "apt-get update still failed after auto-fix."
+  echo "Please check files under /etc/apt/sources.list and /etc/apt/sources.list.d/."
+  return 1
 }
 
 ensure_venv_support() {
