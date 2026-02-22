@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app.acl_presets import ACL_PRESETS, ACL_PRESET_MAP
 from app.converters import SUPPORTED_TARGETS, convert_nodes
 from app.share_links import LinkStore
 from app.subscription import fetch_subscription, parse_subscription
@@ -30,6 +31,7 @@ class ConvertRequest(BaseModel):
     source_type: Literal["text", "url"] = "text"
     target: Literal["mihomo", "sing-box", "uri"] = "mihomo"
     uri_as_base64: bool = False
+    acl_preset: str | None = None
     acl_text: str | None = None
     acl_url: str | None = None
 
@@ -53,6 +55,14 @@ async def _load_source(req: ConvertRequest) -> str:
 
 
 async def _load_acl_text(req: ConvertRequest) -> str:
+    if req.acl_preset and req.acl_preset.strip():
+        preset = ACL_PRESET_MAP.get(req.acl_preset.strip())
+        if not preset:
+            raise HTTPException(status_code=400, detail=f"unsupported acl preset: {req.acl_preset}")
+        try:
+            return (await fetch_subscription(preset.url)).strip()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"failed to fetch acl preset: {exc}") from exc
     if req.acl_text and req.acl_text.strip():
         return req.acl_text.strip()
     if req.acl_url and req.acl_url.strip():
@@ -110,7 +120,16 @@ async def supported() -> dict[str, object]:
         "acl": {
             "format": "clash rule lines or ACL4SSR custom syntax",
             "available_in_targets": ["mihomo"],
+            "preset_count": len(ACL_PRESETS),
         },
+    }
+
+
+@app.get("/api/acl-presets")
+async def acl_presets() -> dict[str, object]:
+    return {
+        "source": "ACL4SSR-sub style presets",
+        "items": [{"id": item.id, "label": item.label, "url": item.url} for item in ACL_PRESETS],
     }
 
 
@@ -186,6 +205,7 @@ async def convert_subscription(
     url: str = Query(..., min_length=4, description="subscription URL"),
     target: str = Query("mihomo", description="target format"),
     uri_as_base64: bool = Query(False, description="for target=uri"),
+    acl_preset: str = Query("", description="acl preset id"),
     acl: str = Query("", description="acl text"),
     acl_url: str = Query("", description="acl URL"),
 ) -> PlainTextResponse:
@@ -198,6 +218,15 @@ async def convert_subscription(
         raise HTTPException(status_code=400, detail=f"failed to fetch source URL: {exc}") from exc
 
     acl_text = acl.strip()
+    if not acl_text and acl_preset.strip():
+        preset = ACL_PRESET_MAP.get(acl_preset.strip())
+        if not preset:
+            raise HTTPException(status_code=400, detail=f"unsupported acl preset: {acl_preset}")
+        try:
+            acl_text = (await fetch_subscription(preset.url)).strip()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"failed to fetch acl preset: {exc}") from exc
+
     if not acl_text and acl_url.strip():
         try:
             acl_text = (await fetch_subscription(acl_url.strip())).strip()

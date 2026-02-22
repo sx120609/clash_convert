@@ -232,16 +232,14 @@
           </div>
 
           <div class="row">
-            <label for="aclTextInput">ACL 规则（可选，主要用于 Mihomo）</label>
-            <textarea
-              id="aclTextInput"
-              style="min-height: 120px"
-              placeholder="示例:&#10;DOMAIN-SUFFIX,google.com,PROXY&#10;GEOIP,CN,DIRECT&#10;MATCH,PROXY&#10;&#10;或 ACL4SSR:&#10;[custom]&#10;ruleset=PROXY,[]FINAL"
-            ></textarea>
+            <label for="aclPresetSelect">ACL 规则预设（参考 ACL4SSR-sub）</label>
+            <select id="aclPresetSelect">
+              <option value="">不使用 ACL</option>
+            </select>
           </div>
 
           <div class="row">
-            <label for="aclUrlInput">ACL URL（可选，不填则使用上面的 ACL 文本）</label>
+            <label for="aclUrlInput">自定义 ACL URL（可选，优先级低于预设）</label>
             <input id="aclUrlInput" type="url" placeholder="https://example.com/acl.txt" />
           </div>
 
@@ -272,7 +270,7 @@
       const uriBase64 = document.getElementById("uriBase64");
       const urlInput = document.getElementById("urlInput");
       const textInput = document.getElementById("textInput");
-      const aclTextInput = document.getElementById("aclTextInput");
+      const aclPresetSelect = document.getElementById("aclPresetSelect");
       const aclUrlInput = document.getElementById("aclUrlInput");
       const statusEl = document.getElementById("status");
       const outputEl = document.getElementById("output");
@@ -305,6 +303,25 @@
         warnBox.textContent = `警告 (${warnings.length})\n${warnings.join("\n")}`;
       }
 
+      async function loadAclPresets() {
+        try {
+          const resp = await fetch("/api/acl-presets");
+          if (!resp.ok) {
+            return;
+          }
+          const payload = await resp.json();
+          const items = Array.isArray(payload?.items) ? payload.items : [];
+          for (const item of items) {
+            const option = document.createElement("option");
+            option.value = item.id;
+            option.textContent = item.label;
+            aclPresetSelect.appendChild(option);
+          }
+        } catch (err) {
+          statusEl.textContent = `ACL 预设加载失败: ${err.message}`;
+        }
+      }
+
       sourceTypeInputs.forEach((item) => item.addEventListener("change", syncSourceType));
       targetSelect.addEventListener("change", syncTargetType);
 
@@ -330,7 +347,7 @@
               source_type: sourceType,
               target: targetSelect.value,
               uri_as_base64: uriBase64.checked,
-              acl_text: aclTextInput.value.trim() || null,
+              acl_preset: aclPresetSelect.value || null,
               acl_url: aclUrlInput.value.trim() || null,
             }),
           });
@@ -378,6 +395,7 @@
 
       syncSourceType();
       syncTargetType();
+      loadAclPresets();
     </script>
   </body>
 </html>
