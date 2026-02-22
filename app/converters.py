@@ -458,9 +458,17 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
                     group["proxies"] = [rename_group_map.get(item, item) for item in group["proxies"]]
 
         # For MESL template groups in mainland usage:
-        # - groups that can proxy via Select default to Select
-        # - otherwise default to DIRECT
+        # - Apple/Bilibili/Microsoft/Steam groups default to DIRECT
+        # - other groups default to Select
+        # - every selectable group (except Select itself) must include both Select and DIRECT
+        #   and pin them to first/second position.
         if is_mesl_template:
+            direct_default_keywords = {"apple", "bilibili", "microsoft", "steam"}
+
+            def _is_direct_default_group(name: str) -> bool:
+                lower = name.lower()
+                return any(keyword in lower for keyword in direct_default_keywords)
+
             for group in parsed.proxy_groups:
                 group_name = str(group.get("name", "")).strip()
                 group_type = str(group.get("type", "select")).strip().lower()
@@ -475,18 +483,16 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
                     if proxy and proxy not in proxies:
                         proxies.append(proxy)
                 if not proxies:
-                    continue
+                    proxies = []
 
-                select_item = next((item for item in proxies if item.lower() == "select"), None)
-                if select_item:
-                    group["proxies"] = [select_item] + [item for item in proxies if item != select_item]
-                    continue
+                select_item = next((item for item in proxies if item.lower() == "select"), None) or "Select"
+                direct_item = next((item for item in proxies if item.upper() == "DIRECT"), None) or "DIRECT"
+                rest = [item for item in proxies if item not in {select_item, direct_item}]
 
-                direct_item = next((item for item in proxies if item.upper() == "DIRECT"), None)
-                if direct_item:
-                    group["proxies"] = [direct_item] + [item for item in proxies if item != direct_item]
+                if _is_direct_default_group(group_name):
+                    group["proxies"] = [direct_item, select_item, *rest]
                 else:
-                    group["proxies"] = ["DIRECT", *proxies]
+                    group["proxies"] = [select_item, direct_item, *rest]
 
         if not parsed.proxy_groups:
             parsed.proxy_groups = _default_mihomo_groups(nodes)

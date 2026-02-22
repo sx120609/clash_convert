@@ -264,12 +264,21 @@ proxy-groups:
   - name: MESL
     type: select
     proxies: [Fallback, Auto, DIRECT]
-  - name: ProxyService
-    type: select
-    proxies: [MESL, DIRECT]
-  - name: DomesticService
+  - name: 🍎 Apple
     type: select
     proxies: [DIRECT]
+  - name: 📽️ Bilibili
+    type: select
+    proxies: [DIRECT]
+  - name: 🖥 Microsoft
+    type: select
+    proxies: [DIRECT]
+  - name: 🎮 Steam
+    type: select
+    proxies: [DIRECT]
+  - name: 🔍 Google
+    type: select
+    proxies: [MESL, DIRECT]
   - name: Fallback
     type: select
     proxies: [DIRECT]
@@ -277,13 +286,15 @@ proxy-groups:
     type: select
     proxies: [DIRECT]
 rules:
-  - DOMAIN-SUFFIX,google.com,ProxyService
-  - DOMAIN-SUFFIX,qq.com,DomesticService
+  - DOMAIN-SUFFIX,google.com,🔍 Google
   - MATCH,MESL
 """
     output, warnings, _ = convert_nodes(parsed.nodes, "mihomo", acl_text=acl)
     assert warnings == []
     doc = yaml.safe_load(output)
     groups = {group["name"]: group for group in doc["proxy-groups"]}
-    assert groups["ProxyService"]["proxies"][0] == "Select"
-    assert groups["DomesticService"]["proxies"][0] == "DIRECT"
+    assert groups["🍎 Apple"]["proxies"][:2] == ["DIRECT", "Select"]
+    assert groups["📽️ Bilibili"]["proxies"][:2] == ["DIRECT", "Select"]
+    assert groups["🖥 Microsoft"]["proxies"][:2] == ["DIRECT", "Select"]
+    assert groups["🎮 Steam"]["proxies"][:2] == ["DIRECT", "Select"]
+    assert groups["🔍 Google"]["proxies"][:2] == ["Select", "DIRECT"]
