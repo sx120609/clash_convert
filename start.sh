@@ -350,7 +350,7 @@ install_only() {
   echo "Dependencies are ready."
 }
 
-case "${1:-start}" in
+case "${1:-restart}" in
   install)
     install_only
     ;;
@@ -368,7 +368,7 @@ case "${1:-start}" in
     status
     ;;
   *)
-    echo "Usage: $0 {install|start|stop|restart|status}"
+    echo "Usage: $0 {install|start|stop|restart|status} (default: restart)"
     exit 2
     ;;
 esac
