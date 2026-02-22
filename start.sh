@@ -9,6 +9,16 @@ HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-21502}"
 AUTO_INSTALL="${AUTO_INSTALL:-1}"
 VENV_CREATOR="${VENV_CREATOR:-auto}"
+MIN_PYTHON_MINOR="${MIN_PYTHON_MINOR:-10}"
+
+if [[ "$PYTHON_BIN" == "python3" ]]; then
+  for cand in python3.12 python3.11 python3.10 python3; do
+    if command -v "$cand" >/dev/null 2>&1; then
+      PYTHON_BIN="$cand"
+      break
+    fi
+  done
+fi
 
 BASE_PYTHON="$PYTHON_BIN"
 VENV_PYTHON="$VENV_DIR/bin/python"
@@ -205,8 +215,12 @@ if not pyproject.exists():
 
 try:
     import tomllib
-except ModuleNotFoundError as exc:
-    raise SystemExit(f"tomllib unavailable: {exc}")
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "tomli"])
+        import tomli as tomllib
 
 data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
 deps = data.get("project", {}).get("dependencies", [])
@@ -227,6 +241,15 @@ ensure_runtime() {
 
   if ! command -v "$BASE_PYTHON" >/dev/null 2>&1; then
     echo "Python not found: $BASE_PYTHON"
+    exit 1
+  fi
+
+  local py_minor
+  py_minor="$("$BASE_PYTHON" -c 'import sys; print(sys.version_info.minor)' 2>/dev/null || echo 0)"
+  if [[ "$py_minor" -lt "$MIN_PYTHON_MINOR" ]]; then
+    echo "Python $("$BASE_PYTHON" -V 2>&1) is too old for this project."
+    echo "Current code requires Python >= 3.${MIN_PYTHON_MINOR}."
+    echo "Set PYTHON_BIN to a newer interpreter, e.g.: PYTHON_BIN=python3.11 bash start.sh"
     exit 1
   fi
 
