@@ -6,7 +6,7 @@
 
 - 输入协议: `ss` `ssr` `vmess` `vless` `trojan` `hysteria2/hy2` `tuic` `socks5` `http(s)`
 - 输入形态:
-  - URL 订阅内容
+  - URL 订阅内容（支持多个 URL，换行或 `|` 分隔）
   - 纯文本 URI 列表
   - 整段 Base64 订阅文本
 - 输出目标:
@@ -36,6 +36,7 @@ uvicorn app.main:app --reload --port 8000
   - `source_type`: `url` 或 `text`
   - `target`: `mihomo` / `sing-box` / `uri`
   - `uri_as_base64`: 仅对 `uri` 生效
+  - `source_type=url` 时，`source` 支持多个 URL（换行或 `|` 分隔）
   - `acl_preset`: ACL 预设 ID（可用值见 `GET /api/acl-presets`）
   - `acl_text` / `acl_url`: ACL 规则（当前主要对 `mihomo` 生效）
   - 返回 `result_url`：可直接打开获取转换结果内容
@@ -46,6 +47,7 @@ uvicorn app.main:app --reload --port 8000
   - 打开后直接返回转换后的订阅内容
 - `GET /sub?url=...&target=mihomo`
   - 方便作为“转换后订阅链接”直接给客户端订阅
+  - `url` 支持多个 URL（换行或 `|` 分隔）
   - 支持 `acl_preset`、`acl`、`acl_url` 参数
 
 ## 测试

@@ -206,8 +206,12 @@
           </div>
 
           <div class="row" id="urlWrap">
-            <label for="urlInput">订阅 URL</label>
-            <input id="urlInput" type="url" placeholder="https://example.com/sub?token=..." />
+            <label for="urlInput">订阅 URL（支持多个，换行或 | 分隔）</label>
+            <textarea
+              id="urlInput"
+              style="min-height: 110px"
+              placeholder="https://example.com/sub1&#10;https://example.com/sub2&#10;或 https://a|https://b"
+            ></textarea>
           </div>
 
           <div class="row" id="textWrap" style="display: none">

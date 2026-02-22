@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -44,14 +46,56 @@ class ConvertResponse(BaseModel):
     expires_at: int
 
 
-async def _load_source(req: ConvertRequest) -> str:
+def _split_source_urls(raw: str) -> list[str]:
+    lines = re.split(r"[\n|]+", raw.replace("\r", "\n"))
+    urls: list[str] = []
+    seen: set[str] = set()
+    for part in lines:
+        item = part.strip()
+        if not item:
+            continue
+        if item not in seen:
+            seen.add(item)
+            urls.append(item)
+    return urls
+
+
+async def _load_source_urls(raw: str) -> tuple[str, list[str], list[str]]:
+    urls = _split_source_urls(raw)
+    if not urls:
+        raise HTTPException(status_code=400, detail="source URL is empty")
+    if len(urls) > 50:
+        raise HTTPException(status_code=400, detail="too many source URLs, max is 50")
+
+    results = await asyncio.gather(*(fetch_subscription(url) for url in urls), return_exceptions=True)
+    payloads: list[str] = []
+    warnings: list[str] = []
+    ok_urls: list[str] = []
+
+    for url, result in zip(urls, results):
+        if isinstance(result, Exception):
+            warnings.append(f"failed to fetch {url}: {result}")
+            continue
+        payloads.append(result)
+        ok_urls.append(url)
+
+    if not payloads:
+        head = warnings[:5]
+        suffix = [f"... and {len(warnings) - 5} more fetch errors"] if len(warnings) > 5 else []
+        raise HTTPException(status_code=400, detail={"warnings": head + suffix})
+
+    merged = "\n".join(payloads)
+    if len(warnings) > 10:
+        warnings = warnings[:10] + [f"... and {len(warnings) - 10} more fetch errors"]
+    return merged, warnings, ok_urls
+
+
+async def _load_source(req: ConvertRequest) -> tuple[str, list[str], str | None]:
     source = req.source.strip()
     if req.source_type == "text":
-        return source
-    try:
-        return await fetch_subscription(source)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"failed to fetch source URL: {exc}") from exc
+        return source, [], None
+    payload, warnings, urls = await _load_source_urls(source)
+    return payload, warnings, "|".join(urls)
 
 
 async def _load_acl_text(req: ConvertRequest) -> str:
@@ -135,7 +179,7 @@ async def acl_presets() -> dict[str, object]:
 
 @app.post("/api/convert", response_model=ConvertResponse)
 async def convert(req: ConvertRequest, request: Request) -> ConvertResponse:
-    source_payload = await _load_source(req)
+    source_payload, source_warnings, source_spec = await _load_source(req)
     acl_text = await _load_acl_text(req)
     output, warnings, mime, node_count = _convert_payload(
         source_payload,
@@ -143,9 +187,10 @@ async def convert(req: ConvertRequest, request: Request) -> ConvertResponse:
         uri_as_base64=req.uri_as_base64,
         acl_text=acl_text,
     )
+    warnings = source_warnings + warnings
     if req.source_type == "url":
         token, record = LINK_STORE.create_dynamic(
-            source_url=req.source.strip(),
+            source_url=source_spec or req.source.strip(),
             target=req.target,
             uri_as_base64=req.uri_as_base64,
             acl_text=acl_text,
@@ -182,7 +227,9 @@ async def resolve_link(token: str) -> PlainTextResponse:
     if not record.source_url:
         raise HTTPException(status_code=500, detail="invalid link record")
     try:
-        source_payload = await fetch_subscription(record.source_url)
+        source_payload, _, _ = await _load_source_urls(record.source_url)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"failed to fetch source URL: {exc}") from exc
 
@@ -213,7 +260,9 @@ async def convert_subscription(
         raise HTTPException(status_code=400, detail=f"unsupported target: {target}")
 
     try:
-        source_payload = await fetch_subscription(url)
+        source_payload, _, _ = await _load_source_urls(url)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"failed to fetch source URL: {exc}") from exc
 
