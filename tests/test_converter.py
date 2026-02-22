@@ -107,3 +107,43 @@ def test_render_uri_base64() -> None:
     decoded = base64.b64decode(output).decode("utf-8")
     assert "ss://" in decoded
     assert "vmess://" in decoded
+
+
+def test_parse_clash_yaml_proxies() -> None:
+    yaml_text = """
+mixed-port: 7890
+proxies:
+  - name: ss-node
+    type: ss
+    server: ss.example.com
+    port: 8388
+    cipher: aes-128-gcm
+    password: pass
+  - name: vmess-node
+    type: vmess
+    server: vm.example.com
+    port: 443
+    uuid: 11111111-1111-1111-1111-111111111111
+    alterId: 0
+    cipher: auto
+    tls: true
+    network: ws
+    ws-opts:
+      path: /ws
+"""
+    result = parse_subscription(yaml_text)
+    assert len(result.nodes) == 2
+    assert {node.type for node in result.nodes} == {"ss", "vmess"}
+
+
+def test_proxy_providers_only_gives_single_warning() -> None:
+    yaml_text = """
+proxy-providers:
+  p1:
+    type: http
+    url: http://example.com/sub
+"""
+    result = parse_subscription(yaml_text)
+    assert len(result.nodes) == 0
+    assert len(result.warnings) == 1
+    assert "proxy-providers only" in result.warnings[0]
