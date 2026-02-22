@@ -8,9 +8,11 @@ APP_MODULE="${APP_MODULE:-app.main:app}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-21502}"
 AUTO_INSTALL="${AUTO_INSTALL:-1}"
+VENV_CREATOR="${VENV_CREATOR:-auto}"
 
 BASE_PYTHON="$PYTHON_BIN"
 VENV_PYTHON="$VENV_DIR/bin/python"
+VENV_TOOL=""
 
 RUN_DIR="$ROOT_DIR/run"
 LOG_DIR="$ROOT_DIR/logs"
@@ -79,9 +81,57 @@ apt_update_with_retry() {
   return 1
 }
 
-ensure_venv_support() {
-  if "$BASE_PYTHON" -c "import ensurepip" >/dev/null 2>&1; then
+bootstrap_system_pip() {
+  if "$BASE_PYTHON" -m pip --version >/dev/null 2>&1; then
     return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp /tmp/get-pip.XXXXXX.py)"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o "$tmp"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$tmp" https://bootstrap.pypa.io/get-pip.py
+  else
+    rm -f "$tmp"
+    return 1
+  fi
+
+  "$BASE_PYTHON" "$tmp" --disable-pip-version-check
+  rm -f "$tmp"
+  "$BASE_PYTHON" -m pip --version >/dev/null 2>&1
+}
+
+ensure_venv_support() {
+  if [[ "$VENV_CREATOR" == "venv" || "$VENV_CREATOR" == "auto" ]]; then
+    if "$BASE_PYTHON" -c "import ensurepip" >/dev/null 2>&1; then
+      VENV_TOOL="venv"
+      return 0
+    fi
+  fi
+
+  if [[ "$VENV_CREATOR" == "virtualenv" || "$VENV_CREATOR" == "auto" ]]; then
+    if command -v virtualenv >/dev/null 2>&1; then
+      VENV_TOOL="virtualenv-bin"
+      return 0
+    fi
+
+    if "$BASE_PYTHON" -m virtualenv --version >/dev/null 2>&1; then
+      VENV_TOOL="virtualenv-module"
+      return 0
+    fi
+
+    echo "ensurepip unavailable, trying virtualenv fallback ..."
+    if ! bootstrap_system_pip; then
+      echo "Cannot bootstrap pip with get-pip.py."
+    else
+      "$BASE_PYTHON" -m pip install --upgrade pip virtualenv || true
+      if "$BASE_PYTHON" -m virtualenv --version >/dev/null 2>&1; then
+        VENV_TOOL="virtualenv-module"
+        return 0
+      fi
+    fi
   fi
 
   echo "Missing Python venv support (ensurepip)."
@@ -107,9 +157,14 @@ ensure_venv_support() {
     exit 1
   fi
 
-  if ! "$BASE_PYTHON" -c "import ensurepip" >/dev/null 2>&1; then
-    echo "python3-venv installed, but ensurepip is still unavailable."
-    echo "Try installing version-specific package, e.g. python3.11-venv."
+  if "$BASE_PYTHON" -c "import ensurepip" >/dev/null 2>&1; then
+    VENV_TOOL="venv"
+    return 0
+  fi
+
+  echo "python3-venv installed, but ensurepip is still unavailable."
+  echo "Try installing version-specific package, e.g. python3.11-venv."
+  if [[ -z "$VENV_TOOL" ]]; then
     exit 1
   fi
 }
@@ -117,8 +172,23 @@ ensure_venv_support() {
 recreate_venv() {
   ensure_venv_support
   rm -rf "$VENV_DIR"
-  echo "Creating virtualenv at $VENV_DIR ..."
-  "$BASE_PYTHON" -m venv "$VENV_DIR"
+  echo "Creating virtualenv at $VENV_DIR (tool: $VENV_TOOL) ..."
+
+  case "$VENV_TOOL" in
+    venv)
+      "$BASE_PYTHON" -m venv "$VENV_DIR"
+      ;;
+    virtualenv-bin)
+      virtualenv -p "$BASE_PYTHON" "$VENV_DIR"
+      ;;
+    virtualenv-module)
+      "$BASE_PYTHON" -m virtualenv "$VENV_DIR"
+      ;;
+    *)
+      echo "No available virtual environment tool."
+      exit 1
+      ;;
+  esac
 }
 
 ensure_runtime() {
