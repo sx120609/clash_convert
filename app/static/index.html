@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>订阅转换器 | Mihomo / Sing-box</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f2efe5;
+        --panel: #fffdf7;
+        --ink: #191816;
+        --muted: #5d5a54;
+        --accent: #e15533;
+        --accent-2: #0d8b8f;
+        --line: #d8d1c1;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Noto Sans SC", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 10% 5%, #ffd8b8, transparent 25%),
+          radial-gradient(circle at 95% 90%, #b8f4e8, transparent 25%),
+          var(--bg);
+      }
+
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px 16px 36px;
+      }
+
+      .hero {
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: clamp(26px, 4vw, 42px);
+        letter-spacing: -0.02em;
+      }
+
+      .sub {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+        box-shadow: 0 8px 28px rgba(25, 24, 22, 0.06);
+      }
+
+      .panel h2 {
+        margin: 2px 0 12px;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 18px;
+      }
+
+      label {
+        display: block;
+        font-weight: 500;
+        margin-bottom: 6px;
+      }
+
+      .row {
+        margin-bottom: 10px;
+      }
+
+      input[type="url"],
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 11px;
+        font-size: 14px;
+        color: var(--ink);
+        background: #fff;
+      }
+
+      textarea {
+        min-height: 220px;
+        resize: vertical;
+      }
+
+      .inline {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 10px;
+        display: inline-flex;
+        gap: 5px;
+        align-items: center;
+        font-size: 13px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .primary {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .secondary {
+        background: var(--accent-2);
+        color: #fff;
+      }
+
+      pre {
+        margin: 0;
+        min-height: 330px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+        overflow: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      .status {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+
+      .warn {
+        margin-top: 10px;
+        padding: 10px;
+        background: #fff6df;
+        border: 1px solid #f0d694;
+        border-radius: 10px;
+        font-size: 12px;
+      }
+
+      @media (max-width: 900px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <section class="hero">
+        <h1>订阅转换器</h1>
+        <p class="sub">
+          输入订阅 URL 或节点文本，转换为 Mihomo/Clash、Sing-box 或通用 URI 订阅。
+        </p>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <h2>输入</h2>
+          <div class="row">
+            <label>来源类型</label>
+            <div class="inline">
+              <label class="chip"><input type="radio" name="sourceType" value="url" checked /> URL</label>
+              <label class="chip"><input type="radio" name="sourceType" value="text" /> 文本</label>
+            </div>
+          </div>
+
+          <div class="row" id="urlWrap">
+            <label for="urlInput">订阅 URL</label>
+            <input id="urlInput" type="url" placeholder="https://example.com/sub?token=..." />
+          </div>
+
+          <div class="row" id="textWrap" style="display: none">
+            <label for="textInput">订阅文本（支持整段 base64 或 URI 列表）</label>
+            <textarea
+              id="textInput"
+              placeholder="vmess://...&#10;vless://...&#10;ss://..."
+            ></textarea>
+          </div>
+
+          <div class="row">
+            <label for="targetSelect">目标客户端格式</label>
+            <select id="targetSelect">
+              <option value="mihomo">Mihomo / Clash YAML</option>
+              <option value="sing-box">Sing-box JSON</option>
+              <option value="uri">URI 列表</option>
+            </select>
+          </div>
+
+          <div class="row" id="uriBase64Wrap" style="display: none">
+            <label class="chip"><input id="uriBase64" type="checkbox" /> URI 输出为 Base64 订阅</label>
+          </div>
+
+          <div class="actions">
+            <button class="primary" id="convertBtn" type="button">转换</button>
+            <button class="secondary" id="copyBtn" type="button">复制结果</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>输出</h2>
+          <div class="status" id="status">等待转换</div>
+          <pre id="output"></pre>
+          <div class="warn" id="warnBox" style="display: none"></div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const sourceTypeInputs = Array.from(document.querySelectorAll('input[name="sourceType"]'));
+      const urlWrap = document.getElementById("urlWrap");
+      const textWrap = document.getElementById("textWrap");
+      const targetSelect = document.getElementById("targetSelect");
+      const uriBase64Wrap = document.getElementById("uriBase64Wrap");
+      const uriBase64 = document.getElementById("uriBase64");
+      const urlInput = document.getElementById("urlInput");
+      const textInput = document.getElementById("textInput");
+      const statusEl = document.getElementById("status");
+      const outputEl = document.getElementById("output");
+      const warnBox = document.getElementById("warnBox");
+      const convertBtn = document.getElementById("convertBtn");
+      const copyBtn = document.getElementById("copyBtn");
+
+      function currentSourceType() {
+        return sourceTypeInputs.find((item) => item.checked)?.value || "url";
+      }
+
+      function syncSourceType() {
+        const type = currentSourceType();
+        urlWrap.style.display = type === "url" ? "block" : "none";
+        textWrap.style.display = type === "text" ? "block" : "none";
+      }
+
+      function syncTargetType() {
+        uriBase64Wrap.style.display = targetSelect.value === "uri" ? "block" : "none";
+      }
+
+      function showWarnings(warnings) {
+        if (!warnings || warnings.length === 0) {
+          warnBox.style.display = "none";
+          warnBox.textContent = "";
+          return;
+        }
+        warnBox.style.display = "block";
+        warnBox.textContent = `警告 (${warnings.length})\n${warnings.join("\n")}`;
+      }
+
+      sourceTypeInputs.forEach((item) => item.addEventListener("change", syncSourceType));
+      targetSelect.addEventListener("change", syncTargetType);
+
+      convertBtn.addEventListener("click", async () => {
+        const sourceType = currentSourceType();
+        const source = sourceType === "url" ? urlInput.value.trim() : textInput.value.trim();
+        if (!source) {
+          statusEl.textContent = "请输入订阅来源。";
+          return;
+        }
+
+        statusEl.textContent = "转换中...";
+        showWarnings([]);
+        outputEl.textContent = "";
+
+        try {
+          const resp = await fetch("/api/convert", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source,
+              source_type: sourceType,
+              target: targetSelect.value,
+              uri_as_base64: uriBase64.checked,
+            }),
+          });
+          const payload = await resp.json();
+          if (!resp.ok) {
+            const detail = payload?.detail;
+            if (typeof detail === "string") {
+              throw new Error(detail);
+            }
+            if (detail?.warnings) {
+              throw new Error(detail.warnings.join("\n"));
+            }
+            throw new Error("转换失败");
+          }
+
+          statusEl.textContent = `完成: ${payload.node_count} 个节点 -> ${payload.target}`;
+          outputEl.textContent = payload.output || "";
+          showWarnings(payload.warnings || []);
+        } catch (err) {
+          statusEl.textContent = `失败: ${err.message}`;
+        }
+      });
+
+      copyBtn.addEventListener("click", async () => {
+        const content = outputEl.textContent || "";
+        if (!content) {
+          statusEl.textContent = "没有可复制的结果。";
+          return;
+        }
+        await navigator.clipboard.writeText(content);
+        statusEl.textContent = "结果已复制到剪贴板。";
+      });
+
+      syncSourceType();
+      syncTargetType();
+    </script>
+  </body>
+</html>
