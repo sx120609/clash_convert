@@ -1,405 +1,781 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>订阅转换器 | Mihomo / Sing-box</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
-      rel="stylesheet"
-    />
-    <style>
-      :root {
-        --bg: #f2efe5;
-        --panel: #fffdf7;
-        --ink: #191816;
-        --muted: #5d5a54;
-        --accent: #e15533;
-        --accent-2: #0d8b8f;
-        --line: #d8d1c1;
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>订阅转换器 | Mihomo / Sing-box</title>
+  <meta name="description" content="在线订阅链接转换工具，支持 Mihomo/Clash、Sing-box 及通用 URI 格式互转。" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+    rel="stylesheet" />
+  <style>
+    /* ===== Design Tokens ===== */
+    :root {
+      --bg: #f8f7f4;
+      --bg-warm: #faf9f6;
+      --surface: #ffffff;
+      --surface-hover: #fefefe;
+      --input-bg: #f5f4f1;
+      --input-focus-bg: #ffffff;
+      --text: #1a1a1a;
+      --text-secondary: #555555;
+      --text-muted: #999999;
+      --accent: #5046e5;
+      --accent-light: #6c63ff;
+      --accent-soft: rgba(80, 70, 229, 0.08);
+      --accent-glow: rgba(80, 70, 229, 0.18);
+      --accent-2: #0891b2;
+      --accent-2-soft: rgba(8, 145, 178, 0.08);
+      --accent-2-glow: rgba(8, 145, 178, 0.15);
+      --border: #e8e5df;
+      --border-light: #f0ede8;
+      --success: #059669;
+      --success-soft: rgba(5, 150, 105, 0.08);
+      --error: #dc2626;
+      --error-soft: rgba(220, 38, 38, 0.06);
+      --warning-bg: #fffbeb;
+      --warning-border: #fde68a;
+      --warning-text: #92400e;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+      --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+      --shadow-accent: 0 4px 14px rgba(80, 70, 229, 0.2);
+      --radius: 16px;
+      --radius-sm: 10px;
+      --radius-xs: 8px;
+      --radius-pill: 999px;
+      --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* ===== Reset ===== */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ===== Body & Background ===== */
+    body {
+      min-height: 100vh;
+      font-family: "Noto Sans SC", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* Subtle decorative gradient orbs */
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.6;
+    }
+
+    body::before {
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(80, 70, 229, 0.1), transparent 70%);
+      top: -120px;
+      right: -80px;
+      animation: drift 20s ease-in-out infinite alternate;
+    }
+
+    body::after {
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(8, 145, 178, 0.08), transparent 70%);
+      bottom: -100px;
+      left: -60px;
+      animation: drift 20s ease-in-out infinite alternate-reverse;
+    }
+
+    @keyframes drift {
+      0% {
+        transform: translate(0, 0);
       }
 
-      * {
-        box-sizing: border-box;
+      100% {
+        transform: translate(30px, 20px);
+      }
+    }
+
+    /* ===== Layout ===== */
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 36px 20px 48px;
+    }
+
+    /* ===== Hero ===== */
+    .hero {
+      text-align: center;
+      margin-bottom: 32px;
+      animation: fadeIn 0.5s ease-out both;
+    }
+
+    .hero-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      color: #fff;
+      font-size: 24px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow-accent);
+    }
+
+    h1 {
+      font-family: "Inter", "Noto Sans SC", sans-serif;
+      font-size: clamp(26px, 4vw, 40px);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+
+    .hero .badge {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 4px 14px;
+      border-radius: var(--radius-pill);
+      background: var(--accent-soft);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.03em;
+    }
+
+    .sub {
+      margin: 10px auto 0;
+      max-width: 480px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    /* ===== Grid ===== */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    /* ===== Panels ===== */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow-md);
+      animation: slideUp 0.45s ease-out both;
+      transition: box-shadow var(--transition);
+    }
+
+    .panel:hover {
+      box-shadow: var(--shadow-lg);
+    }
+
+    .panel:nth-child(2) {
+      animation-delay: 0.08s;
+    }
+
+    .panel h2 {
+      font-family: "Inter", "Noto Sans SC", sans-serif;
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+    }
+
+    .panel h2 .icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-xs);
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+
+    .panel:first-child h2 .icon {
+      background: var(--accent-soft);
+    }
+
+    .panel:nth-child(2) h2 .icon {
+      background: var(--accent-2-soft);
+    }
+
+    /* ===== Form Elements ===== */
+    label {
+      display: block;
+      font-weight: 500;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: var(--text-secondary);
+    }
+
+    .row {
+      margin-bottom: 14px;
+    }
+
+    input[type="url"],
+    input[type="text"],
+    select,
+    textarea {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 13px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--input-bg);
+      transition:
+        border-color var(--transition),
+        box-shadow var(--transition),
+        background var(--transition);
+      outline: none;
+    }
+
+    input[type="url"]:hover,
+    input[type="text"]:hover,
+    select:hover,
+    textarea:hover {
+      border-color: #d0cdc6;
+    }
+
+    input[type="url"]:focus,
+    input[type="text"]:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--accent);
+      background: var(--input-focus-bg);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      color: var(--text-muted);
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    #textWrap textarea {
+      min-height: 220px;
+    }
+
+    select {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23999' viewBox='0 0 16 16'%3E%3Cpath d='M8 11.4 2.6 6h10.8L8 11.4z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 36px;
+      cursor: pointer;
+    }
+
+    /* ===== Chips / Radio ===== */
+    .inline {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .chip {
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-pill);
+      padding: 6px 14px;
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition);
+      color: var(--text-secondary);
+      background: var(--bg-warm);
+      user-select: none;
+    }
+
+    .chip:hover {
+      border-color: #ccc;
+      background: #fff;
+    }
+
+    .chip:has(input:checked) {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .chip input[type="radio"],
+    .chip input[type="checkbox"] {
+      accent-color: var(--accent);
+      width: 14px;
+      height: 14px;
+      margin: 0;
+    }
+
+    /* ===== Buttons ===== */
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    button {
+      position: relative;
+      border: 0;
+      border-radius: var(--radius-sm);
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition:
+        transform var(--transition),
+        box-shadow var(--transition),
+        background var(--transition),
+        border-color var(--transition);
+      overflow: hidden;
+    }
+
+    /* Shine sweep on hover */
+    button::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(105deg,
+          transparent 38%,
+          rgba(255, 255, 255, 0.3) 44%,
+          rgba(255, 255, 255, 0.3) 56%,
+          transparent 62%);
+      transform: translateX(-110%);
+      transition: transform 0.5s ease;
+    }
+
+    button:hover::after {
+      transform: translateX(110%);
+    }
+
+    .primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      color: #fff;
+      box-shadow: var(--shadow-accent);
+    }
+
+    .primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(80, 70, 229, 0.28);
+    }
+
+    .primary:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 8px rgba(80, 70, 229, 0.18);
+    }
+
+    .secondary {
+      background: var(--surface);
+      color: var(--accent-2);
+      border: 1.5px solid var(--border);
+    }
+
+    .secondary:hover {
+      border-color: var(--accent-2);
+      background: var(--accent-2-soft);
+      transform: translateY(-1px);
+    }
+
+    .secondary:active {
+      transform: translateY(0);
+    }
+
+    /* ===== Output ===== */
+    pre {
+      margin: 0;
+      min-height: 180px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: var(--input-bg);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      overflow: auto;
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12.5px;
+      line-height: 1.7;
+      color: var(--text);
+    }
+
+    .status {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .status::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+      transition: background var(--transition), box-shadow var(--transition);
+    }
+
+    .status.success {
+      color: var(--success);
+    }
+
+    .status.success::before {
+      background: var(--success);
+      box-shadow: 0 0 8px rgba(5, 150, 105, 0.3);
+    }
+
+    .status.error {
+      color: var(--error);
+    }
+
+    .status.error::before {
+      background: var(--error);
+      box-shadow: 0 0 8px rgba(220, 38, 38, 0.25);
+    }
+
+    .warn {
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      border-radius: var(--radius-xs);
+      font-size: 12px;
+      color: var(--warning-text);
+      line-height: 1.6;
+    }
+
+    /* ===== Footer ===== */
+    .footer {
+      text-align: center;
+      margin-top: 36px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border-light);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ===== Animations ===== */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-8px);
       }
 
-      body {
-        margin: 0;
-        min-height: 100vh;
-        font-family: "Noto Sans SC", sans-serif;
-        color: var(--ink);
-        background:
-          radial-gradient(circle at 10% 5%, #ffd8b8, transparent 25%),
-          radial-gradient(circle at 95% 90%, #b8f4e8, transparent 25%),
-          var(--bg);
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(14px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: 1fr;
       }
 
       .wrap {
-        max-width: 1100px;
-        margin: 0 auto;
-        padding: 24px 16px 36px;
-      }
-
-      .hero {
-        margin-bottom: 18px;
-      }
-
-      h1 {
-        margin: 0;
-        font-family: "Space Grotesk", sans-serif;
-        font-size: clamp(26px, 4vw, 42px);
-        letter-spacing: -0.02em;
-      }
-
-      .sub {
-        margin: 8px 0 0;
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      .grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 14px;
+        padding: 24px 14px 32px;
       }
 
       .panel {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 14px;
-        box-shadow: 0 8px 28px rgba(25, 24, 22, 0.06);
+        padding: 18px;
       }
 
-      .panel h2 {
-        margin: 2px 0 12px;
-        font-family: "Space Grotesk", sans-serif;
-        font-size: 18px;
+      body::before,
+      body::after {
+        width: 280px;
+        height: 280px;
+        opacity: 0.4;
       }
+    }
 
-      label {
-        display: block;
-        font-weight: 500;
-        margin-bottom: 6px;
-      }
+    /* ===== Scrollbar ===== */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
 
-      .row {
-        margin-bottom: 10px;
-      }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
 
-      input[type="url"],
-      input[type="text"],
-      select,
-      textarea {
-        width: 100%;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 10px 11px;
-        font-size: 14px;
-        color: var(--ink);
-        background: #fff;
-      }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
 
-      textarea {
-        min-height: 220px;
-        resize: vertical;
-      }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #ccc;
+    }
+  </style>
+</head>
 
-      .inline {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        align-items: center;
-      }
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="hero-icon">⚡</div>
+      <h1>订阅转换器</h1>
+      <span class="badge">Mihomo · Sing-box · URI</span>
+      <p class="sub">
+        输入订阅 URL 或节点文本，一键转换为 Mihomo/Clash、Sing-box 或通用 URI 订阅格式。
+      </p>
+    </section>
 
-      .chip {
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 6px 10px;
-        display: inline-flex;
-        gap: 5px;
-        align-items: center;
-        font-size: 13px;
-      }
-
-      .actions {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-
-      button {
-        border: 0;
-        border-radius: 10px;
-        padding: 10px 14px;
-        font-size: 14px;
-        font-weight: 700;
-        cursor: pointer;
-      }
-
-      .primary {
-        background: var(--accent);
-        color: #fff;
-      }
-
-      .secondary {
-        background: var(--accent-2);
-        color: #fff;
-      }
-
-      pre {
-        margin: 0;
-        min-height: 330px;
-        white-space: pre-wrap;
-        word-break: break-word;
-        background: #fff;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 12px;
-        overflow: auto;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 12px;
-      }
-
-      .status {
-        font-size: 13px;
-        color: var(--muted);
-        margin-bottom: 8px;
-      }
-
-      .warn {
-        margin-top: 10px;
-        padding: 10px;
-        background: #fff6df;
-        border: 1px solid #f0d694;
-        border-radius: 10px;
-        font-size: 12px;
-      }
-
-      @media (max-width: 900px) {
-        .grid {
-          grid-template-columns: 1fr;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <section class="hero">
-        <h1>订阅转换器</h1>
-        <p class="sub">
-          输入订阅 URL 或节点文本，转换为 Mihomo/Clash、Sing-box 或通用 URI 订阅。
-        </p>
-      </section>
-
-      <section class="grid">
-        <div class="panel">
-          <h2>输入</h2>
-          <div class="row">
-            <label>来源类型</label>
-            <div class="inline">
-              <label class="chip"><input type="radio" name="sourceType" value="url" checked /> URL</label>
-              <label class="chip"><input type="radio" name="sourceType" value="text" /> 文本</label>
-            </div>
-          </div>
-
-          <div class="row" id="urlWrap">
-            <label for="urlInput">订阅 URL（支持多个，换行或 | 分隔）</label>
-            <textarea
-              id="urlInput"
-              style="min-height: 110px"
-              placeholder="https://example.com/sub1&#10;https://example.com/sub2&#10;或 https://a|https://b"
-            ></textarea>
-          </div>
-
-          <div class="row" id="textWrap" style="display: none">
-            <label for="textInput">订阅文本（支持整段 base64 或 URI 列表）</label>
-            <textarea
-              id="textInput"
-              placeholder="vmess://...&#10;vless://...&#10;ss://..."
-            ></textarea>
-          </div>
-
-          <div class="row">
-            <label for="targetSelect">目标客户端格式</label>
-            <select id="targetSelect">
-              <option value="mihomo">Mihomo / Clash YAML</option>
-              <option value="sing-box">Sing-box JSON</option>
-              <option value="uri">URI 列表</option>
-            </select>
-          </div>
-
-          <div class="row" id="uriBase64Wrap" style="display: none">
-            <label class="chip"><input id="uriBase64" type="checkbox" /> URI 输出为 Base64 订阅</label>
-          </div>
-
-          <div class="row">
-            <label for="aclPresetSelect">ACL 规则预设（参考 ACL4SSR-sub）</label>
-            <select id="aclPresetSelect">
-              <option value="">不使用 ACL</option>
-            </select>
-          </div>
-
-          <div class="row">
-            <label for="aclUrlInput">自定义 ACL URL（可选，优先级低于预设）</label>
-            <input id="aclUrlInput" type="url" placeholder="https://example.com/acl.txt" />
-          </div>
-
-          <div class="actions">
-            <button class="primary" id="convertBtn" type="button">转换</button>
-            <button class="secondary" id="copyBtn" type="button">复制链接</button>
+    <section class="grid">
+      <div class="panel">
+        <h2><span class="icon">📥</span> 输入</h2>
+        <div class="row">
+          <label>来源类型</label>
+          <div class="inline">
+            <label class="chip"><input type="radio" name="sourceType" value="url" checked /> URL</label>
+            <label class="chip"><input type="radio" name="sourceType" value="text" /> 文本</label>
           </div>
         </div>
 
-        <div class="panel">
-          <h2>输出链接</h2>
-          <div class="status" id="status">等待转换</div>
-          <pre id="output"></pre>
-          <div class="row" style="margin-top: 10px">
-            <button class="secondary" id="openBtn" type="button">打开链接</button>
-          </div>
-          <div class="warn" id="warnBox" style="display: none"></div>
+        <div class="row" id="urlWrap">
+          <label for="urlInput">订阅 URL（支持多个，换行或 | 分隔）</label>
+          <textarea id="urlInput"
+            placeholder="https://example.com/sub1&#10;https://example.com/sub2&#10;或 https://a|https://b"></textarea>
         </div>
-      </section>
+
+        <div class="row" id="textWrap" style="display: none">
+          <label for="textInput">订阅文本（支持整段 base64 或 URI 列表）</label>
+          <textarea id="textInput" placeholder="vmess://...&#10;vless://...&#10;ss://..."></textarea>
+        </div>
+
+        <div class="row">
+          <label for="targetSelect">目标客户端格式</label>
+          <select id="targetSelect">
+            <option value="mihomo">Mihomo / Clash YAML</option>
+            <option value="sing-box">Sing-box JSON</option>
+            <option value="uri">URI 列表</option>
+          </select>
+        </div>
+
+        <div class="row" id="uriBase64Wrap" style="display: none">
+          <label class="chip"><input id="uriBase64" type="checkbox" /> URI 输出为 Base64 订阅</label>
+        </div>
+
+        <div class="row">
+          <label for="aclPresetSelect">ACL 规则预设（参考 ACL4SSR-sub）</label>
+          <select id="aclPresetSelect">
+            <option value="">不使用 ACL</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label for="aclUrlInput">自定义 ACL URL（可选，优先级低于预设）</label>
+          <input id="aclUrlInput" type="url" placeholder="https://example.com/acl.txt" />
+        </div>
+
+        <div class="actions">
+          <button class="primary" id="convertBtn" type="button">⚡ 转换</button>
+          <button class="secondary" id="copyBtn" type="button">📋 复制链接</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2><span class="icon">📤</span> 输出链接</h2>
+        <div class="status" id="status">等待转换</div>
+        <pre id="output"></pre>
+        <div class="row" style="margin-top: 12px">
+          <button class="secondary" id="openBtn" type="button">🔗 打开链接</button>
+        </div>
+        <div class="warn" id="warnBox" style="display: none"></div>
+      </div>
+    </section>
+
+    <div class="footer">
+      Subscription Converter &mdash; Powered by FastAPI
     </div>
+  </div>
 
-    <script>
-      const sourceTypeInputs = Array.from(document.querySelectorAll('input[name="sourceType"]'));
-      const urlWrap = document.getElementById("urlWrap");
-      const textWrap = document.getElementById("textWrap");
-      const targetSelect = document.getElementById("targetSelect");
-      const uriBase64Wrap = document.getElementById("uriBase64Wrap");
-      const uriBase64 = document.getElementById("uriBase64");
-      const urlInput = document.getElementById("urlInput");
-      const textInput = document.getElementById("textInput");
-      const aclPresetSelect = document.getElementById("aclPresetSelect");
-      const aclUrlInput = document.getElementById("aclUrlInput");
-      const statusEl = document.getElementById("status");
-      const outputEl = document.getElementById("output");
-      const warnBox = document.getElementById("warnBox");
-      const convertBtn = document.getElementById("convertBtn");
-      const copyBtn = document.getElementById("copyBtn");
-      const openBtn = document.getElementById("openBtn");
+  <script>
+    const sourceTypeInputs = Array.from(document.querySelectorAll('input[name="sourceType"]'));
+    const urlWrap = document.getElementById("urlWrap");
+    const textWrap = document.getElementById("textWrap");
+    const targetSelect = document.getElementById("targetSelect");
+    const uriBase64Wrap = document.getElementById("uriBase64Wrap");
+    const uriBase64 = document.getElementById("uriBase64");
+    const urlInput = document.getElementById("urlInput");
+    const textInput = document.getElementById("textInput");
+    const aclPresetSelect = document.getElementById("aclPresetSelect");
+    const aclUrlInput = document.getElementById("aclUrlInput");
+    const statusEl = document.getElementById("status");
+    const outputEl = document.getElementById("output");
+    const warnBox = document.getElementById("warnBox");
+    const convertBtn = document.getElementById("convertBtn");
+    const copyBtn = document.getElementById("copyBtn");
+    const openBtn = document.getElementById("openBtn");
 
-      function currentSourceType() {
-        return sourceTypeInputs.find((item) => item.checked)?.value || "url";
+    function currentSourceType() {
+      return sourceTypeInputs.find((item) => item.checked)?.value || "url";
+    }
+
+    function syncSourceType() {
+      const type = currentSourceType();
+      urlWrap.style.display = type === "url" ? "block" : "none";
+      textWrap.style.display = type === "text" ? "block" : "none";
+    }
+
+    function syncTargetType() {
+      uriBase64Wrap.style.display = targetSelect.value === "uri" ? "block" : "none";
+    }
+
+    function setStatus(text, type = "") {
+      statusEl.textContent = text;
+      statusEl.className = "status" + (type ? ` ${type}` : "");
+    }
+
+    function showWarnings(warnings) {
+      if (!warnings || warnings.length === 0) {
+        warnBox.style.display = "none";
+        warnBox.textContent = "";
+        return;
       }
+      warnBox.style.display = "block";
+      warnBox.textContent = `⚠ 警告 (${warnings.length})\n${warnings.join("\n")}`;
+    }
 
-      function syncSourceType() {
-        const type = currentSourceType();
-        urlWrap.style.display = type === "url" ? "block" : "none";
-        textWrap.style.display = type === "text" ? "block" : "none";
-      }
-
-      function syncTargetType() {
-        uriBase64Wrap.style.display = targetSelect.value === "uri" ? "block" : "none";
-      }
-
-      function showWarnings(warnings) {
-        if (!warnings || warnings.length === 0) {
-          warnBox.style.display = "none";
-          warnBox.textContent = "";
-          return;
+    async function loadAclPresets() {
+      try {
+        const resp = await fetch("/api/acl-presets");
+        if (!resp.ok) return;
+        const payload = await resp.json();
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        for (const item of items) {
+          const option = document.createElement("option");
+          option.value = item.id;
+          option.textContent = item.label;
+          aclPresetSelect.appendChild(option);
         }
-        warnBox.style.display = "block";
-        warnBox.textContent = `警告 (${warnings.length})\n${warnings.join("\n")}`;
+      } catch (err) {
+        setStatus(`ACL 预设加载失败: ${err.message}`, "error");
+      }
+    }
+
+    sourceTypeInputs.forEach((item) => item.addEventListener("change", syncSourceType));
+    targetSelect.addEventListener("change", syncTargetType);
+
+    convertBtn.addEventListener("click", async () => {
+      const sourceType = currentSourceType();
+      const source = sourceType === "url" ? urlInput.value.trim() : textInput.value.trim();
+      if (!source) {
+        setStatus("请输入订阅来源。", "error");
+        return;
       }
 
-      async function loadAclPresets() {
-        try {
-          const resp = await fetch("/api/acl-presets");
-          if (!resp.ok) {
-            return;
-          }
-          const payload = await resp.json();
-          const items = Array.isArray(payload?.items) ? payload.items : [];
-          for (const item of items) {
-            const option = document.createElement("option");
-            option.value = item.id;
-            option.textContent = item.label;
-            aclPresetSelect.appendChild(option);
-          }
-        } catch (err) {
-          statusEl.textContent = `ACL 预设加载失败: ${err.message}`;
-        }
-      }
+      setStatus("转换中...");
+      showWarnings([]);
+      outputEl.textContent = "";
+      outputEl.dataset.link = "";
 
-      sourceTypeInputs.forEach((item) => item.addEventListener("change", syncSourceType));
-      targetSelect.addEventListener("change", syncTargetType);
-
-      convertBtn.addEventListener("click", async () => {
-        const sourceType = currentSourceType();
-        const source = sourceType === "url" ? urlInput.value.trim() : textInput.value.trim();
-        if (!source) {
-          statusEl.textContent = "请输入订阅来源。";
-          return;
+      try {
+        const resp = await fetch("/api/convert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source,
+            source_type: sourceType,
+            target: targetSelect.value,
+            uri_as_base64: uriBase64.checked,
+            acl_preset: aclPresetSelect.value || null,
+            acl_url: aclUrlInput.value.trim() || null,
+          }),
+        });
+        const payload = await resp.json();
+        if (!resp.ok) {
+          const detail = payload?.detail;
+          if (typeof detail === "string") throw new Error(detail);
+          if (detail?.warnings) throw new Error(detail.warnings.join("\n"));
+          throw new Error("转换失败");
         }
 
-        statusEl.textContent = "转换中...";
-        showWarnings([]);
-        outputEl.textContent = "";
-        outputEl.dataset.link = "";
-
-        try {
-          const resp = await fetch("/api/convert", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source,
-              source_type: sourceType,
-              target: targetSelect.value,
-              uri_as_base64: uriBase64.checked,
-              acl_preset: aclPresetSelect.value || null,
-              acl_url: aclUrlInput.value.trim() || null,
-            }),
-          });
-          const payload = await resp.json();
-          if (!resp.ok) {
-            const detail = payload?.detail;
-            if (typeof detail === "string") {
-              throw new Error(detail);
-            }
-            if (detail?.warnings) {
-              throw new Error(detail.warnings.join("\n"));
-            }
-            throw new Error("转换失败");
-          }
-
-          statusEl.textContent = `完成: ${payload.node_count} 个节点 -> ${payload.target}，链接有效到 ${new Date(
+        setStatus(
+          `完成: ${payload.node_count} 个节点 → ${payload.target}，有效期至 ${new Date(
             payload.expires_at * 1000
-          ).toLocaleString()}`;
-          outputEl.textContent = payload.result_url || "";
-          outputEl.dataset.link = payload.result_url || "";
-          showWarnings(payload.warnings || []);
-        } catch (err) {
-          statusEl.textContent = `失败: ${err.message}`;
-        }
-      });
+          ).toLocaleString()}`,
+          "success"
+        );
+        outputEl.textContent = payload.result_url || "";
+        outputEl.dataset.link = payload.result_url || "";
+        showWarnings(payload.warnings || []);
+      } catch (err) {
+        setStatus(`失败: ${err.message}`, "error");
+      }
+    });
 
-      copyBtn.addEventListener("click", async () => {
-        const link = outputEl.dataset.link || outputEl.textContent || "";
-        if (!link) {
-          statusEl.textContent = "没有可复制的链接。";
-          return;
-        }
-        await navigator.clipboard.writeText(link);
-        statusEl.textContent = "链接已复制到剪贴板。";
-      });
+    copyBtn.addEventListener("click", async () => {
+      const link = outputEl.dataset.link || outputEl.textContent || "";
+      if (!link) {
+        setStatus("没有可复制的链接。", "error");
+        return;
+      }
+      await navigator.clipboard.writeText(link);
+      setStatus("链接已复制到剪贴板 ✓", "success");
+    });
 
-      openBtn.addEventListener("click", () => {
-        const link = outputEl.dataset.link || outputEl.textContent || "";
-        if (!link) {
-          statusEl.textContent = "没有可打开的链接。";
-          return;
-        }
-        window.open(link, "_blank");
-      });
+    openBtn.addEventListener("click", () => {
+      const link = outputEl.dataset.link || outputEl.textContent || "";
+      if (!link) {
+        setStatus("没有可打开的链接。", "error");
+        return;
+      }
+      window.open(link, "_blank");
+    });
 
-      syncSourceType();
-      syncTargetType();
-      loadAclPresets();
-    </script>
-  </body>
+    syncSourceType();
+    syncTargetType();
+    loadAclPresets();
+  </script>
+</body>
+
 </html>
