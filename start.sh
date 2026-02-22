@@ -19,6 +19,35 @@ LOG_FILE="$LOG_DIR/uvicorn.log"
 
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
+ensure_venv_support() {
+  if "$BASE_PYTHON" -c "import ensurepip" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Missing Python venv support (ensurepip)."
+
+  if command -v apt-get >/dev/null 2>&1; then
+    if [[ "$(id -u)" -ne 0 ]]; then
+      echo "Please run as root (or use sudo): apt-get update && apt-get install -y python3-venv"
+      exit 1
+    fi
+
+    echo "Installing system package: python3-venv ..."
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -y
+    apt-get install -y python3-venv
+  else
+    echo "Cannot auto-install venv support. Install python3-venv manually."
+    exit 1
+  fi
+
+  if ! "$BASE_PYTHON" -c "import ensurepip" >/dev/null 2>&1; then
+    echo "python3-venv installed, but ensurepip is still unavailable."
+    echo "Try installing version-specific package, e.g. python3.11-venv."
+    exit 1
+  fi
+}
+
 ensure_runtime() {
   if [[ "$AUTO_INSTALL" != "1" ]]; then
     return 0
@@ -30,6 +59,7 @@ ensure_runtime() {
   fi
 
   if [[ ! -x "$VENV_PYTHON" ]]; then
+    ensure_venv_support
     echo "Creating virtualenv at $VENV_DIR ..."
     "$BASE_PYTHON" -m venv "$VENV_DIR"
   fi
