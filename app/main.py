@@ -211,7 +211,7 @@ async def supported() -> dict[str, object]:
         "note": "Some targets may support only a subset of protocols.",
         "acl": {
             "format": "clash rule lines or ACL4SSR custom syntax",
-            "available_in_targets": ["mihomo"],
+            "available_in_targets": ["mihomo", "surge"],
             "preset_count": len(ACL_PRESETS),
         },
     }

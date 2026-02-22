@@ -116,11 +116,32 @@ def test_render_surge_conf_with_vless_warning() -> None:
     assert any("vless" in warning for warning in warnings)
 
 
-def test_render_surge_ignores_acl_with_warning() -> None:
+def test_render_surge_applies_acl_rules() -> None:
     text = _make_ss_uri()
     parsed = parse_subscription(text)
-    _, warnings, _ = convert_nodes(parsed.nodes, "surge", acl_text="MATCH,PROXY")
-    assert any("ACL rules are currently applied only to Mihomo output." in warning for warning in warnings)
+    acl = """
+DOMAIN-SUFFIX,google.com,PROXY
+MATCH,PROXY
+"""
+    output, warnings, _ = convert_nodes(parsed.nodes, "surge", acl_text=acl)
+    assert warnings == []
+    assert "DOMAIN-SUFFIX,google.com,PROXY" in output
+    assert "FINAL,PROXY" in output
+
+
+def test_render_surge_acl4ssr_ruleset_url() -> None:
+    text = _make_ss_uri()
+    parsed = parse_subscription(text)
+    acl = """
+[custom]
+custom_proxy_group=PROXY`select`[]ss-node`[]DIRECT
+ruleset=PROXY,https://example.com/rules.list
+ruleset=PROXY,[]FINAL
+"""
+    output, warnings, _ = convert_nodes(parsed.nodes, "surge", acl_text=acl)
+    assert warnings == []
+    assert "RULE-SET,https://example.com/rules.list,PROXY" in output
+    assert "FINAL,PROXY" in output
 
 
 def test_render_uri_base64() -> None:

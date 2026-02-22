@@ -847,6 +847,109 @@ def _surge_safe_name(name: str, used: set[str]) -> str:
     return final
 
 
+def _surge_resolve_builtin_target(target: str, default_policy: str) -> str | None:
+    upper = target.upper()
+    if upper == "DIRECT":
+        return "DIRECT"
+    if upper in {"REJECT", "REJECT-DROP"}:
+        return "REJECT"
+    if upper == "PASS":
+        return "DIRECT"
+    if upper in {"PROXY", "GLOBAL"}:
+        return default_policy
+    return None
+
+
+def _surge_resolve_policy_target(
+    target: str,
+    *,
+    proxy_name_map: dict[str, str],
+    group_name_map: dict[str, str],
+    default_policy: str,
+) -> str:
+    value = (target or "").strip()
+    if not value:
+        return default_policy
+    if value in proxy_name_map:
+        return proxy_name_map[value]
+    if value in group_name_map:
+        return group_name_map[value]
+    builtin = _surge_resolve_builtin_target(value, default_policy)
+    if builtin:
+        return builtin
+    return default_policy
+
+
+def _surge_convert_rule(
+    rule: str,
+    *,
+    providers: dict[str, Any],
+    proxy_name_map: dict[str, str],
+    group_name_map: dict[str, str],
+    default_policy: str,
+) -> tuple[str | None, str | None]:
+    parts = [part.strip() for part in rule.split(",")]
+    if not parts or not parts[0]:
+        return None, "invalid empty rule line"
+
+    rule_type = parts[0].upper()
+    if rule_type == "MATCH":
+        target = parts[1] if len(parts) > 1 else default_policy
+        resolved = _surge_resolve_policy_target(
+            target,
+            proxy_name_map=proxy_name_map,
+            group_name_map=group_name_map,
+            default_policy=default_policy,
+        )
+        return f"FINAL,{resolved}", None
+
+    if len(parts) < 3:
+        return None, f"invalid rule missing target: {rule}"
+
+    value = parts[1]
+    target = _surge_resolve_policy_target(
+        parts[2],
+        proxy_name_map=proxy_name_map,
+        group_name_map=group_name_map,
+        default_policy=default_policy,
+    )
+    extras = [item for item in parts[3:] if item]
+
+    supported = {
+        "DOMAIN",
+        "DOMAIN-SUFFIX",
+        "DOMAIN-KEYWORD",
+        "IP-CIDR",
+        "IP-CIDR6",
+        "GEOIP",
+        "PROCESS-NAME",
+        "DST-PORT",
+        "SRC-PORT",
+    }
+    if rule_type in supported:
+        out = f"{rule_type},{value},{target}"
+        if extras:
+            out += f",{','.join(extras)}"
+        return out, None
+
+    if rule_type == "RULE-SET":
+        rule_set_url = value
+        if not (rule_set_url.startswith("http://") or rule_set_url.startswith("https://")):
+            provider = providers.get(value)
+            if isinstance(provider, dict):
+                candidate = str(provider.get("url", "")).strip()
+                if candidate.startswith("http://") or candidate.startswith("https://"):
+                    rule_set_url = candidate
+        if not (rule_set_url.startswith("http://") or rule_set_url.startswith("https://")):
+            return None, f"RULE-SET provider/url not found for surge: {value}"
+        out = f"RULE-SET,{rule_set_url},{target}"
+        if extras:
+            out += f",{','.join(extras)}"
+        return out, None
+
+    return None, f"rule type '{rule_type}' is not supported in surge output"
+
+
 def _surge_ws_opts(params: dict[str, Any]) -> tuple[list[str], str | None]:
     network = str(params.get("network") or "tcp").lower()
     if network in {"tcp", "none", ""}:
@@ -864,102 +967,177 @@ def _surge_ws_opts(params: dict[str, Any]) -> tuple[list[str], str | None]:
     return opts, None
 
 
+def _build_surge_proxy_entry(node: ProxyNode, surge_name: str) -> tuple[str | None, str | None]:
+    params = node.params
+    opts: list[str]
+
+    if node.type == "ss":
+        opts = [
+            f"encrypt-method={_quote_surge_value(params.get('cipher', 'aes-128-gcm'))}",
+            f"password={_quote_surge_value(params.get('password', ''))}",
+            "udp-relay=true",
+        ]
+        return f"{surge_name} = ss, {node.server}, {node.port}, {', '.join(opts)}", None
+    if node.type == "vmess":
+        ws_opts, ws_warning = _surge_ws_opts(params)
+        if ws_warning:
+            return None, f"{node.name}: {ws_warning}"
+        opts = [f"username={_quote_surge_value(params.get('uuid', ''))}"]
+        ignore_alter_id = int(params.get("alter_id", 0)) != 0
+        if params.get("tls"):
+            opts.append("tls=true")
+        if params.get("sni"):
+            opts.append(f"sni={_quote_surge_value(params['sni'])}")
+        if "skip_cert_verify" in params:
+            opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
+        opts.extend(ws_opts)
+        warning = f"{node.name}: surge vmess ignores alter_id" if ignore_alter_id else None
+        return f"{surge_name} = vmess, {node.server}, {node.port}, {', '.join(opts)}", warning
+    if node.type == "trojan":
+        ws_opts, ws_warning = _surge_ws_opts(params)
+        if ws_warning:
+            return None, f"{node.name}: {ws_warning}"
+        opts = [f"password={_quote_surge_value(params.get('password', ''))}"]
+        if params.get("sni"):
+            opts.append(f"sni={_quote_surge_value(params['sni'])}")
+        if "skip_cert_verify" in params:
+            opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
+        opts.extend(ws_opts)
+        return f"{surge_name} = trojan, {node.server}, {node.port}, {', '.join(opts)}", None
+    if node.type == "http":
+        opts = []
+        if params.get("username"):
+            opts.append(f"username={_quote_surge_value(params['username'])}")
+        if params.get("password"):
+            opts.append(f"password={_quote_surge_value(params['password'])}")
+        if params.get("tls"):
+            opts.append("tls=true")
+        if "skip_cert_verify" in params:
+            opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
+        line = f"{surge_name} = http, {node.server}, {node.port}"
+        if opts:
+            line += f", {', '.join(opts)}"
+        return line, None
+    if node.type == "socks5":
+        opts = []
+        if params.get("username"):
+            opts.append(f"username={_quote_surge_value(params['username'])}")
+        if params.get("password"):
+            opts.append(f"password={_quote_surge_value(params['password'])}")
+        if params.get("tls"):
+            opts.append("tls=true")
+        if "skip_cert_verify" in params:
+            opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
+        line = f"{surge_name} = socks5, {node.server}, {node.port}"
+        if opts:
+            line += f", {', '.join(opts)}"
+        return line, None
+    return None, f"{node.name}: {node.type} is not supported in surge output"
+
+
 def render_surge(nodes: list[ProxyNode], *, acl_text: str | None = None) -> tuple[str, list[str]]:
     warnings: list[str] = []
     used_names: set[str] = set()
     proxy_lines: list[str] = []
+    proxy_name_map: dict[str, str] = {}
     proxy_names: list[str] = []
 
     for node in nodes:
-        params = node.params
         surge_name = _surge_safe_name(node.name, used_names)
-        opts: list[str]
-        line: str | None = None
-
-        if node.type == "ss":
-            opts = [
-                f"encrypt-method={_quote_surge_value(params.get('cipher', 'aes-128-gcm'))}",
-                f"password={_quote_surge_value(params.get('password', ''))}",
-                "udp-relay=true",
-            ]
-            line = f"{surge_name} = ss, {node.server}, {node.port}, {', '.join(opts)}"
-        elif node.type == "vmess":
-            ws_opts, ws_warning = _surge_ws_opts(params)
-            if ws_warning:
-                warnings.append(f"{node.name}: {ws_warning}")
-                continue
-            opts = [f"username={_quote_surge_value(params.get('uuid', ''))}"]
-            if int(params.get("alter_id", 0)):
-                warnings.append(f"{node.name}: surge vmess ignores alter_id")
-            if params.get("tls"):
-                opts.append("tls=true")
-            if params.get("sni"):
-                opts.append(f"sni={_quote_surge_value(params['sni'])}")
-            if "skip_cert_verify" in params:
-                opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
-            opts.extend(ws_opts)
-            line = f"{surge_name} = vmess, {node.server}, {node.port}, {', '.join(opts)}"
-        elif node.type == "trojan":
-            ws_opts, ws_warning = _surge_ws_opts(params)
-            if ws_warning:
-                warnings.append(f"{node.name}: {ws_warning}")
-                continue
-            opts = [f"password={_quote_surge_value(params.get('password', ''))}"]
-            if params.get("sni"):
-                opts.append(f"sni={_quote_surge_value(params['sni'])}")
-            if "skip_cert_verify" in params:
-                opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
-            opts.extend(ws_opts)
-            line = f"{surge_name} = trojan, {node.server}, {node.port}, {', '.join(opts)}"
-        elif node.type == "http":
-            opts = []
-            if params.get("username"):
-                opts.append(f"username={_quote_surge_value(params['username'])}")
-            if params.get("password"):
-                opts.append(f"password={_quote_surge_value(params['password'])}")
-            if params.get("tls"):
-                opts.append("tls=true")
-            if "skip_cert_verify" in params:
-                opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
-            line = f"{surge_name} = http, {node.server}, {node.port}"
-            if opts:
-                line += f", {', '.join(opts)}"
-        elif node.type == "socks5":
-            opts = []
-            if params.get("username"):
-                opts.append(f"username={_quote_surge_value(params['username'])}")
-            if params.get("password"):
-                opts.append(f"password={_quote_surge_value(params['password'])}")
-            if params.get("tls"):
-                opts.append("tls=true")
-            if "skip_cert_verify" in params:
-                opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
-            line = f"{surge_name} = socks5, {node.server}, {node.port}"
-            if opts:
-                line += f", {', '.join(opts)}"
-        else:
-            warnings.append(f"{node.name}: {node.type} is not supported in surge output")
+        line, warning = _build_surge_proxy_entry(node, surge_name)
+        if warning:
+            warnings.append(warning)
+        if not line:
             continue
 
         proxy_lines.append(line)
+        proxy_name_map[node.name] = surge_name
         proxy_names.append(surge_name)
 
-    group_members = list(dict.fromkeys(proxy_names + ["DIRECT"]))
-    group_line = f"PROXY = select, {', '.join(group_members)}"
+    parsed_acl = parse_acl_text(acl_text or "", nodes) if acl_text and acl_text.strip() else AclPolicy()
+    warnings.extend(parsed_acl.warnings)
+
+    group_lines: list[str] = []
+    group_name_map: dict[str, str] = {}
+    raw_groups: list[dict[str, Any]] = []
+
+    if parsed_acl.proxy_groups:
+        for group in parsed_acl.proxy_groups:
+            if not isinstance(group, dict):
+                continue
+            raw_name = str(group.get("name", "")).strip()
+            if not raw_name:
+                continue
+            safe_group_name = _surge_safe_name(raw_name, used_names)
+            group_name_map[raw_name] = safe_group_name
+            raw_groups.append(group)
+
+    if not group_name_map:
+        group_name_map["PROXY"] = _surge_safe_name("PROXY", used_names)
+        raw_groups = [{"name": "PROXY", "type": "select", "proxies": proxy_names + ["DIRECT"]}]
+
+    default_policy = group_name_map.get("PROXY") or next(iter(group_name_map.values()))
+
+    for group in raw_groups:
+        raw_name = str(group.get("name", "")).strip()
+        if not raw_name or raw_name not in group_name_map:
+            continue
+        safe_group_name = group_name_map[raw_name]
+        group_type = str(group.get("type", "select")).strip().lower()
+        if group_type != "select":
+            warnings.append(f"{raw_name}: surge proxy-group type '{group_type}' downgraded to select")
+        raw_members = group.get("proxies")
+        members: list[str] = []
+        if isinstance(raw_members, list):
+            for member in raw_members:
+                resolved = _surge_resolve_policy_target(
+                    str(member),
+                    proxy_name_map=proxy_name_map,
+                    group_name_map=group_name_map,
+                    default_policy=default_policy,
+                )
+                if resolved and resolved not in members:
+                    members.append(resolved)
+        if not members:
+            for member in proxy_names + ["DIRECT"]:
+                if member not in members:
+                    members.append(member)
+        group_lines.append(f"{safe_group_name} = select, {', '.join(members)}")
+
+    if not group_lines:
+        fallback_members = list(dict.fromkeys(proxy_names + ["DIRECT"]))
+        group_lines.append(f"{default_policy} = select, {', '.join(fallback_members)}")
+
+    rule_lines: list[str] = []
+    if parsed_acl.rules:
+        for rule in parsed_acl.rules:
+            converted, warning = _surge_convert_rule(
+                rule,
+                providers=parsed_acl.rule_providers,
+                proxy_name_map=proxy_name_map,
+                group_name_map=group_name_map,
+                default_policy=default_policy,
+            )
+            if warning:
+                warnings.append(warning)
+            if converted:
+                rule_lines.append(converted)
+    if not rule_lines:
+        rule_lines = [f"FINAL,{default_policy}"]
+    elif not any(line.upper().startswith("FINAL,") for line in rule_lines):
+        rule_lines.append(f"FINAL,{default_policy}")
 
     sections = [
         "[Proxy]",
         *proxy_lines,
         "",
         "[Proxy Group]",
-        group_line,
+        *group_lines,
         "",
         "[Rule]",
-        "FINAL,PROXY",
+        *rule_lines,
         "",
     ]
-    if acl_text and acl_text.strip():
-        warnings.append("ACL rules are currently applied only to Mihomo output.")
     return "\n".join(sections), warnings
 
 

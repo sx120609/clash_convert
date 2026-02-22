@@ -78,6 +78,15 @@ def test_acl_presets_endpoint() -> None:
     assert any(item["id"] == "mesl_rules" for item in payload["items"])
 
 
+def test_supported_endpoint_includes_surge_acl_target() -> None:
+    client = TestClient(app)
+    response = client.get("/api/supported")
+    assert response.status_code == 200
+    payload = response.json()
+    assert "surge" in payload["targets"]
+    assert "surge" in payload["acl"]["available_in_targets"]
+
+
 def test_convert_supports_acl_preset(monkeypatch) -> None:
     async def fake_fetch_subscription(url: str, timeout_sec: float = 15.0) -> str:  # noqa: ARG001
         if "ACL4SSR_Online.ini" in url:

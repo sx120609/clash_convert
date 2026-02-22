@@ -18,7 +18,7 @@
   - 支持直接选择 ACL 预设（ACL4SSR-sub 风格）
   - 内置 `MESL规则` 预设（从指定 Clash 配置提取规则/分组）
   - 支持 Clash 规则行（如 `DOMAIN-SUFFIX,google.com,PROXY`）
-  - 支持 ACL4SSR 常见 `custom_proxy_group=` / `ruleset=` 语法（主要用于 Mihomo 输出）
+  - 支持 ACL4SSR 常见 `custom_proxy_group=` / `ruleset=` 语法（用于 Mihomo/Surge 输出）
 
 ## 快速启动
 
@@ -40,7 +40,7 @@ uvicorn app.main:app --reload --port 8000
   - `uri_as_base64`: 仅对 `uri` 生效
   - `source_type=url` 时，`source` 支持多个 URL（换行或 `|` 分隔）
   - `acl_preset`: ACL 预设 ID（可用值见 `GET /api/acl-presets`）
-  - `acl_text` / `acl_url`: ACL 规则（当前主要对 `mihomo` 生效）
+  - `acl_text` / `acl_url`: ACL 规则（对 `mihomo` / `surge` 生效）
   - 返回 `result_url`：可直接打开获取转换结果内容
   - 返回的链接默认有效期约 6 小时
 - `GET /api/acl-presets`
