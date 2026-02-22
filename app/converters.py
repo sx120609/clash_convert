@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
+import re
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
 
@@ -10,6 +13,35 @@ import yaml
 from app.models import ProxyNode
 
 SUPPORTED_TARGETS = {"mihomo", "sing-box", "uri"}
+
+RULE_TYPES = {
+    "DOMAIN",
+    "DOMAIN-SUFFIX",
+    "DOMAIN-KEYWORD",
+    "IP-CIDR",
+    "IP-CIDR6",
+    "SRC-IP-CIDR",
+    "GEOIP",
+    "GEOSITE",
+    "PROCESS-NAME",
+    "PROCESS-PATH",
+    "DST-PORT",
+    "SRC-PORT",
+    "NETWORK",
+    "IN-TYPE",
+    "IN-PORT",
+    "IN-USER",
+    "RULE-SET",
+    "MATCH",
+}
+
+
+@dataclass(slots=True)
+class AclPolicy:
+    proxy_groups: list[dict[str, Any]] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
+    rule_providers: dict[str, Any] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
 
 
 def _tls_fields_for_mihomo(node: ProxyNode, output: dict[str, Any]) -> None:
@@ -167,25 +199,204 @@ def node_to_mihomo_proxy(node: ProxyNode) -> dict[str, Any]:
     return out
 
 
-def render_mihomo(nodes: list[ProxyNode]) -> str:
-    proxies = [node_to_mihomo_proxy(node) for node in nodes]
-    group_proxies = [proxy["name"] for proxy in proxies]
-    if not group_proxies:
-        group_proxies = ["DIRECT"]
+def _default_mihomo_groups(nodes: list[ProxyNode]) -> list[dict[str, Any]]:
+    names = [node.name for node in nodes]
+    if not names:
+        names = ["DIRECT"]
+    elif "DIRECT" not in names:
+        names.append("DIRECT")
+    return [{"name": "PROXY", "type": "select", "proxies": names}]
+
+
+def _default_mihomo_rules() -> list[str]:
+    return ["MATCH,PROXY"]
+
+
+def _sanitize_rule_provider_name(url: str) -> str:
+    digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:10]
+    return f"acl_{digest}"
+
+
+def _is_rule_like(line: str) -> bool:
+    upper = line.split(",", 1)[0].strip().upper()
+    return upper in RULE_TYPES
+
+
+def _normalize_rule_line(line: str, fallback_group: str = "PROXY") -> str | None:
+    value = line.strip()
+    if not value:
+        return None
+    if value.startswith("#") or value.startswith(";") or value.startswith("//"):
+        return None
+    if value.startswith("[") and value.endswith("]"):
+        return None
+    if not _is_rule_like(value):
+        return None
+    parts = [part.strip() for part in value.split(",") if part.strip()]
+    if not parts:
+        return None
+    rule_type = parts[0].upper()
+    if rule_type == "MATCH":
+        return f"MATCH,{fallback_group}" if len(parts) == 1 else f"MATCH,{parts[1]}"
+    if len(parts) == 1:
+        return f"{rule_type},{fallback_group}"
+    if len(parts) == 2:
+        return f"{rule_type},{parts[1]},{fallback_group}"
+    return ",".join(parts)
+
+
+def _parse_custom_proxy_group(expr: str, node_names: list[str]) -> tuple[dict[str, Any] | None, str | None]:
+    parts = [part.strip() for part in expr.split("`")]
+    if len(parts) < 2:
+        return None, f"invalid custom_proxy_group: {expr[:80]}"
+    name = parts[0] or "PROXY"
+    group_type = (parts[1] or "select").lower()
+    rest = [item for item in parts[2:] if item]
+
+    proxies: list[str] = []
+    test_url: str | None = None
+    interval = 300
+    for item in rest:
+        if item.startswith("[]"):
+            proxies.append(item[2:].strip())
+            continue
+        if item.startswith("http://") or item.startswith("https://"):
+            test_url = item
+            continue
+        match = re.search(r"\d+", item)
+        if match:
+            interval = int(match.group(0))
+
+    if not proxies:
+        proxies = list(node_names)
+        if "DIRECT" not in proxies:
+            proxies.append("DIRECT")
+    group: dict[str, Any] = {"name": name, "type": group_type}
+    if group_type in {"select", "relay", "fallback", "url-test", "load-balance"}:
+        group["proxies"] = proxies
     else:
-        group_proxies.append("DIRECT")
+        # Unknown group type fallback to select to avoid invalid output.
+        group["type"] = "select"
+        group["proxies"] = proxies
+    if group["type"] in {"fallback", "url-test", "load-balance"}:
+        group["url"] = test_url or "http://www.gstatic.com/generate_204"
+        group["interval"] = interval
+        if group["type"] == "load-balance":
+            group["strategy"] = "consistent-hashing"
+    return group, None
+
+
+def _ruleset_expr_to_rule(
+    group: str,
+    expr: str,
+    providers: dict[str, Any],
+) -> str | None:
+    item = expr.strip()
+    if not item:
+        return None
+    if item.startswith("[]"):
+        inline = item[2:].strip()
+        inline_upper = inline.upper()
+        if inline_upper in {"FINAL", "MATCH"}:
+            return f"MATCH,{group}"
+        if "," in inline:
+            normalized = _normalize_rule_line(inline, fallback_group=group)
+            return normalized
+        return f"DOMAIN-SUFFIX,{inline},{group}"
+    if item.startswith("http://") or item.startswith("https://"):
+        provider_name = _sanitize_rule_provider_name(item)
+        providers[provider_name] = {
+            "type": "http",
+            "behavior": "classical",
+            "url": item,
+            "path": f"./ruleset/{provider_name}.yaml",
+            "interval": 86400,
+        }
+        return f"RULE-SET,{provider_name},{group}"
+    normalized = _normalize_rule_line(item, fallback_group=group)
+    return normalized
+
+
+def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
+    policy = AclPolicy()
+    raw = (acl_text or "").strip()
+    if not raw:
+        return policy
+
+    lines = [line.strip() for line in raw.replace("\ufeff", "").splitlines()]
+    node_names = [node.name for node in nodes]
+    if "DIRECT" not in node_names:
+        node_names.append("DIRECT")
+
+    is_acl4ssr = any(line.startswith("ruleset=") or line.startswith("custom_proxy_group=") for line in lines)
+    if is_acl4ssr:
+        for line in lines:
+            if not line or line.startswith(("#", ";", "//")):
+                continue
+            if line.startswith("[") and line.endswith("]"):
+                continue
+            if line.startswith("custom_proxy_group="):
+                expr = line.split("=", 1)[1].strip()
+                group, warning = _parse_custom_proxy_group(expr, node_names)
+                if warning:
+                    policy.warnings.append(warning)
+                    continue
+                if group:
+                    policy.proxy_groups.append(group)
+                continue
+            if line.startswith("ruleset="):
+                body = line.split("=", 1)[1].strip()
+                if "," not in body:
+                    policy.warnings.append(f"invalid ruleset line: {line[:80]}")
+                    continue
+                group, expr = body.split(",", 1)
+                rule = _ruleset_expr_to_rule(group.strip(), expr.strip(), policy.rule_providers)
+                if rule:
+                    policy.rules.append(rule)
+                continue
+        return policy
+
+    for line in lines:
+        normalized = _normalize_rule_line(line)
+        if normalized:
+            policy.rules.append(normalized)
+    return policy
+
+
+def _build_mihomo_acl(nodes: list[ProxyNode], acl_text: str | None) -> tuple[list[dict[str, Any]], list[str], dict[str, Any], list[str]]:
+    groups = _default_mihomo_groups(nodes)
+    rules = _default_mihomo_rules()
+    providers: dict[str, Any] = {}
+    warnings: list[str] = []
+    if not acl_text or not acl_text.strip():
+        return groups, rules, providers, warnings
+
+    parsed = parse_acl_text(acl_text, nodes)
+    if parsed.proxy_groups:
+        groups = parsed.proxy_groups
+    if parsed.rules:
+        rules = parsed.rules
+    if parsed.rule_providers:
+        providers = parsed.rule_providers
+    warnings.extend(parsed.warnings)
+    return groups, rules, providers, warnings
+
+
+def render_mihomo(nodes: list[ProxyNode], *, acl_text: str | None = None) -> tuple[str, list[str]]:
+    proxies = [node_to_mihomo_proxy(node) for node in nodes]
+    proxy_groups, rules, rule_providers, acl_warnings = _build_mihomo_acl(nodes, acl_text)
     config: dict[str, Any] = {
         "mixed-port": 7890,
         "allow-lan": False,
         "mode": "rule",
         "log-level": "info",
         "proxies": proxies,
-        "proxy-groups": [
-            {"name": "PROXY", "type": "select", "proxies": group_proxies},
-        ],
-        "rules": ["MATCH,PROXY"],
+        "proxy-groups": proxy_groups,
+        "rules": rules,
     }
-    return yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
+    if rule_providers:
+        config["rule-providers"] = rule_providers
+    return yaml.safe_dump(config, sort_keys=False, allow_unicode=True), acl_warnings
 
 
 def _build_singbox_tls(params: dict[str, Any], *, force: bool = False) -> dict[str, Any] | None:
@@ -524,15 +735,22 @@ def convert_nodes(
     target: str,
     *,
     uri_as_base64: bool = False,
+    acl_text: str | None = None,
 ) -> tuple[str, list[str], str]:
     if target not in SUPPORTED_TARGETS:
         raise ValueError(f"unsupported target: {target}")
 
     if target == "mihomo":
-        return render_mihomo(nodes), [], "text/yaml; charset=utf-8"
+        output, warnings = render_mihomo(nodes, acl_text=acl_text)
+        return output, warnings, "text/yaml; charset=utf-8"
     if target == "sing-box":
         output, warnings = render_sing_box(nodes)
+        if acl_text and acl_text.strip():
+            warnings.append("ACL rules are currently applied only to Mihomo output.")
         return output, warnings, "application/json; charset=utf-8"
     if target == "uri":
-        return render_uri_bundle(nodes, as_base64=uri_as_base64), [], "text/plain; charset=utf-8"
+        warnings: list[str] = []
+        if acl_text and acl_text.strip():
+            warnings.append("ACL rules are ignored for URI output.")
+        return render_uri_bundle(nodes, as_base64=uri_as_base64), warnings, "text/plain; charset=utf-8"
     raise ValueError(f"unsupported target: {target}")

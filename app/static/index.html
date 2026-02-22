@@ -90,6 +90,7 @@
       }
 
       input[type="url"],
+      input[type="text"],
       select,
       textarea {
         width: 100%;
@@ -230,16 +231,33 @@
             <label class="chip"><input id="uriBase64" type="checkbox" /> URI 输出为 Base64 订阅</label>
           </div>
 
+          <div class="row">
+            <label for="aclTextInput">ACL 规则（可选，主要用于 Mihomo）</label>
+            <textarea
+              id="aclTextInput"
+              style="min-height: 120px"
+              placeholder="示例:&#10;DOMAIN-SUFFIX,google.com,PROXY&#10;GEOIP,CN,DIRECT&#10;MATCH,PROXY&#10;&#10;或 ACL4SSR:&#10;[custom]&#10;ruleset=PROXY,[]FINAL"
+            ></textarea>
+          </div>
+
+          <div class="row">
+            <label for="aclUrlInput">ACL URL（可选，不填则使用上面的 ACL 文本）</label>
+            <input id="aclUrlInput" type="url" placeholder="https://example.com/acl.txt" />
+          </div>
+
           <div class="actions">
             <button class="primary" id="convertBtn" type="button">转换</button>
-            <button class="secondary" id="copyBtn" type="button">复制结果</button>
+            <button class="secondary" id="copyBtn" type="button">复制链接</button>
           </div>
         </div>
 
         <div class="panel">
-          <h2>输出</h2>
+          <h2>输出链接</h2>
           <div class="status" id="status">等待转换</div>
           <pre id="output"></pre>
+          <div class="row" style="margin-top: 10px">
+            <button class="secondary" id="openBtn" type="button">打开链接</button>
+          </div>
           <div class="warn" id="warnBox" style="display: none"></div>
         </div>
       </section>
@@ -254,11 +272,14 @@
       const uriBase64 = document.getElementById("uriBase64");
       const urlInput = document.getElementById("urlInput");
       const textInput = document.getElementById("textInput");
+      const aclTextInput = document.getElementById("aclTextInput");
+      const aclUrlInput = document.getElementById("aclUrlInput");
       const statusEl = document.getElementById("status");
       const outputEl = document.getElementById("output");
       const warnBox = document.getElementById("warnBox");
       const convertBtn = document.getElementById("convertBtn");
       const copyBtn = document.getElementById("copyBtn");
+      const openBtn = document.getElementById("openBtn");
 
       function currentSourceType() {
         return sourceTypeInputs.find((item) => item.checked)?.value || "url";
@@ -298,6 +319,7 @@
         statusEl.textContent = "转换中...";
         showWarnings([]);
         outputEl.textContent = "";
+        outputEl.dataset.link = "";
 
         try {
           const resp = await fetch("/api/convert", {
@@ -308,6 +330,8 @@
               source_type: sourceType,
               target: targetSelect.value,
               uri_as_base64: uriBase64.checked,
+              acl_text: aclTextInput.value.trim() || null,
+              acl_url: aclUrlInput.value.trim() || null,
             }),
           });
           const payload = await resp.json();
@@ -322,8 +346,11 @@
             throw new Error("转换失败");
           }
 
-          statusEl.textContent = `完成: ${payload.node_count} 个节点 -> ${payload.target}`;
-          outputEl.textContent = payload.output || "";
+          statusEl.textContent = `完成: ${payload.node_count} 个节点 -> ${payload.target}，链接有效到 ${new Date(
+            payload.expires_at * 1000
+          ).toLocaleString()}`;
+          outputEl.textContent = payload.result_url || "";
+          outputEl.dataset.link = payload.result_url || "";
           showWarnings(payload.warnings || []);
         } catch (err) {
           statusEl.textContent = `失败: ${err.message}`;
@@ -331,13 +358,22 @@
       });
 
       copyBtn.addEventListener("click", async () => {
-        const content = outputEl.textContent || "";
-        if (!content) {
-          statusEl.textContent = "没有可复制的结果。";
+        const link = outputEl.dataset.link || outputEl.textContent || "";
+        if (!link) {
+          statusEl.textContent = "没有可复制的链接。";
           return;
         }
-        await navigator.clipboard.writeText(content);
-        statusEl.textContent = "结果已复制到剪贴板。";
+        await navigator.clipboard.writeText(link);
+        statusEl.textContent = "链接已复制到剪贴板。";
+      });
+
+      openBtn.addEventListener("click", () => {
+        const link = outputEl.dataset.link || outputEl.textContent || "";
+        if (!link) {
+          statusEl.textContent = "没有可打开的链接。";
+          return;
+        }
+        window.open(link, "_blank");
       });
 
       syncSourceType();

@@ -147,3 +147,35 @@ proxy-providers:
     assert len(result.nodes) == 0
     assert len(result.warnings) == 1
     assert "proxy-providers only" in result.warnings[0]
+
+
+def test_mihomo_acl_plain_rules() -> None:
+    text = "\n".join([_make_ss_uri(), _make_vmess_uri()])
+    parsed = parse_subscription(text)
+    acl = """
+DOMAIN-SUFFIX,google.com,PROXY
+GEOIP,CN,DIRECT
+MATCH,PROXY
+"""
+    output, warnings, _ = convert_nodes(parsed.nodes, "mihomo", acl_text=acl)
+    assert warnings == []
+    doc = yaml.safe_load(output)
+    assert "rules" in doc
+    assert "DOMAIN-SUFFIX,google.com,PROXY" in doc["rules"]
+    assert "GEOIP,CN,DIRECT" in doc["rules"]
+    assert doc["rules"][-1] == "MATCH,PROXY"
+
+
+def test_mihomo_acl_acl4ssr_style() -> None:
+    text = "\n".join([_make_ss_uri(), _make_vmess_uri()])
+    parsed = parse_subscription(text)
+    acl = """
+[custom]
+custom_proxy_group=PROXY`select`[]vmess-node`[]DIRECT
+ruleset=PROXY,[]FINAL
+"""
+    output, warnings, _ = convert_nodes(parsed.nodes, "mihomo", acl_text=acl)
+    assert warnings == []
+    doc = yaml.safe_load(output)
+    assert doc["proxy-groups"][0]["name"] == "PROXY"
+    assert doc["rules"][-1] == "MATCH,PROXY"
