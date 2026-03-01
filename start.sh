@@ -219,16 +219,16 @@ except ModuleNotFoundError:
     try:
         import tomli as tomllib
     except ModuleNotFoundError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "tomli"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-user", "tomli"])
         import tomli as tomllib
 
 data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
 deps = data.get("project", {}).get("dependencies", [])
-if not deps:
+  if not deps:
     print("No dependencies declared in pyproject.toml.")
     raise SystemExit(0)
 
-cmd = [sys.executable, "-m", "pip", "install", *deps]
+cmd = [sys.executable, "-m", "pip", "install", "--no-user", *deps]
 print("Running:", " ".join(cmd))
 subprocess.check_call(cmd)
 PY
@@ -270,7 +270,7 @@ ensure_runtime() {
 
   if ! "$VENV_PYTHON" -c "import uvicorn, fastapi" >/dev/null 2>&1; then
     echo "Installing dependencies ..."
-    "$VENV_PYTHON" -m pip install --upgrade pip setuptools wheel
+    "$VENV_PYTHON" -m pip install --no-user --upgrade pip setuptools wheel
     install_runtime_deps
   fi
 
