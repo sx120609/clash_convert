@@ -224,7 +224,7 @@ except ModuleNotFoundError:
 
 data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
 deps = data.get("project", {}).get("dependencies", [])
-  if not deps:
+if not deps:
     print("No dependencies declared in pyproject.toml.")
     raise SystemExit(0)
 
