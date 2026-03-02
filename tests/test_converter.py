@@ -144,6 +144,35 @@ ruleset=PROXY,[]FINAL
     assert "FINAL,PROXY" in output
 
 
+def test_render_surge_mesl_template_avoids_self_reference() -> None:
+    text = _make_ss_uri()
+    parsed = parse_subscription(text)
+    acl = """
+proxy-groups:
+  - name: MESL
+    type: select
+    proxies: [MESL, Auto, Fallback, DIRECT]
+  - name: Auto
+    type: select
+    proxies: [DIRECT]
+  - name: Fallback
+    type: select
+    proxies: [DIRECT]
+rules:
+  - MATCH,MESL
+"""
+    output, warnings, _ = convert_nodes(parsed.nodes, "surge", acl_text=acl)
+    assert warnings == []
+    select_line = next(
+        (line for line in output.splitlines() if line.startswith("🎯 Select = select,")),
+        "",
+    )
+    assert select_line
+    parts = [item.strip() for item in select_line.split("=", 1)[1].split(",")]
+    members = parts[1:]
+    assert "🎯 Select" not in members
+
+
 def test_render_uri_base64() -> None:
     text = "\n".join([_make_ss_uri(), _make_vmess_uri()])
     parsed = parse_subscription(text)

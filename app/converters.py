@@ -502,6 +502,29 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
                 else:
                     group["proxies"] = [select_item, direct_item, *rest]
 
+        # Remove self references to avoid cyclic proxy groups (notably in MESL templates).
+        for group in parsed.proxy_groups:
+            if not isinstance(group, dict):
+                continue
+            group_name = str(group.get("name", "")).strip()
+            if not group_name:
+                continue
+            raw_proxies = group.get("proxies")
+            if not isinstance(raw_proxies, list):
+                continue
+            cleaned: list[str] = []
+            for item in raw_proxies:
+                proxy = str(item).strip()
+                if not proxy:
+                    continue
+                if proxy == group_name:
+                    continue
+                if is_mesl_template and group_name == MESL_SELECT_NAME and proxy.lower() == "select":
+                    continue
+                if proxy not in cleaned:
+                    cleaned.append(proxy)
+            group["proxies"] = cleaned
+
         if not parsed.proxy_groups:
             parsed.proxy_groups = _default_mihomo_groups(nodes)
         default_rule_target = parsed.proxy_groups[0]["name"] if parsed.proxy_groups else "PROXY"
