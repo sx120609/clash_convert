@@ -22,14 +22,30 @@
 
 ## 快速启动
 
-```powershell
-python -m venv .venv
-. .\.venv\Scripts\Activate.ps1
-pip install -e .[dev]
-uvicorn app.main:app --reload --port 8000
+```bash
+# 首次安装依赖（自动创建 .venv）
+bash start.sh install
+
+# 启动服务（默认监听 0.0.0.0:21502）
+bash start.sh start
 ```
 
-打开 `http://127.0.0.1:8000/`。
+打开 `http://127.0.0.1:21502/`。
+
+常用命令：
+
+```bash
+# 重启（默认动作）
+bash start.sh
+# 或
+bash start.sh restart
+
+# 查看状态
+bash start.sh status
+
+# 停止服务
+bash start.sh stop
+```
 
 ## API
 
