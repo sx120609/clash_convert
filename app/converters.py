@@ -1096,6 +1096,9 @@ def render_surge(nodes: list[ProxyNode], *, acl_text: str | None = None) -> tupl
                     group_name_map=group_name_map,
                     default_policy=default_policy,
                 )
+                if resolved == safe_group_name:
+                    # Avoid self-referential proxy groups in surge output.
+                    continue
                 if resolved and resolved not in members:
                     members.append(resolved)
         if not members:
