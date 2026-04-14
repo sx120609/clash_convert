@@ -20,6 +20,7 @@ SUPPORTED_SCHEMES = {
     "vmess",
     "vless",
     "trojan",
+    "anytls",
     "hysteria2",
     "hy2",
     "tuic",
@@ -431,6 +432,29 @@ def _parse_trojan(uri: str) -> ProxyNode:
     return ProxyNode(name=name, type="trojan", server=server, port=port, params=params, source_uri=uri)
 
 
+def _parse_anytls(uri: str) -> ProxyNode:
+    parsed = urlsplit(uri)
+    qs = parse_qs(parsed.query)
+    password = unquote(parsed.username or "")
+    server = parsed.hostname or ""
+    port = parsed.port or 0
+    if not password or not server or port <= 0:
+        raise ValueError("invalid anytls endpoint")
+
+    # anytls is normalized to trojan for Clash-compatible output.
+    params: dict[str, Any] = {
+        "password": password,
+        "udp": True,
+        "tls": True,
+    }
+    transport = _parse_transport_from_query(qs)
+    params.update(transport)
+    _apply_tls_query_params(params, qs, force_tls=True)
+
+    name = _normalize_name(unquote(parsed.fragment) if parsed.fragment else None, f"anytls-{server}:{port}")
+    return ProxyNode(name=name, type="trojan", server=server, port=port, params=params, source_uri=uri)
+
+
 def _parse_hysteria2(uri: str) -> ProxyNode:
     parsed = urlsplit(uri.replace("hy2://", "hysteria2://", 1))
     qs = parse_qs(parsed.query)
@@ -651,6 +675,13 @@ def _node_from_clash_proxy(proxy: dict[str, Any]) -> ProxyNode:
         _apply_clash_tls(proxy, params)
     elif ptype == "trojan":
         params["password"] = str(_first_key(proxy, "password") or "")
+        _apply_clash_transport(proxy, params)
+        _apply_clash_tls(proxy, params)
+        if "tls" not in params:
+            params["tls"] = True
+    elif ptype == "anytls":
+        ptype = "trojan"
+        params["password"] = str(_first_key(proxy, "password", "id", "uuid", "user") or "")
         _apply_clash_transport(proxy, params)
         _apply_clash_tls(proxy, params)
         if "tls" not in params:
@@ -882,10 +913,10 @@ def _extract_uri_candidates_from_line(line: str) -> list[str]:
         return []
     if re.match(r"^[\-\s]*url\s*:", stripped, flags=re.IGNORECASE):
         return []
-    if re.match(r"^(ss|ssr|vmess|vless|trojan|hysteria2|hy2|tuic|http|https|socks|socks5)://", stripped, flags=re.IGNORECASE):
+    if re.match(r"^(ss|ssr|vmess|vless|trojan|anytls|hysteria2|hy2|tuic|http|https|socks|socks5)://", stripped, flags=re.IGNORECASE):
         return [stripped]
     pattern = re.compile(
-        r"(ssr?|vmess|vless|trojan|hysteria2|hy2|tuic|socks5?|https?)://[^\s'\",]+",
+        r"(ssr?|vmess|vless|trojan|anytls|hysteria2|hy2|tuic|socks5?|https?)://[^\s'\",]+",
         flags=re.IGNORECASE,
     )
     return [match.group(0) for match in pattern.finditer(stripped)]
@@ -908,6 +939,8 @@ def parse_uri(line: str) -> ProxyNode:
         return _parse_vless(line)
     if scheme == "trojan":
         return _parse_trojan(line)
+    if scheme == "anytls":
+        return _parse_anytls(line)
     if scheme in {"hysteria2", "hy2"}:
         return _parse_hysteria2(line)
     if scheme == "tuic":

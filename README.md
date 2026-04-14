@@ -4,7 +4,7 @@
 
 ## 支持范围
 
-- 输入协议: `ss` `ssr` `vmess` `vless` `trojan` `hysteria2/hy2` `tuic` `socks5` `http(s)`
+- 输入协议: `ss` `ssr` `vmess` `vless` `trojan` `anytls(自动兼容映射为 trojan)` `hysteria2/hy2` `tuic` `socks5` `http(s)`
 - 输入形态:
   - URL 订阅内容（支持多个 URL，换行或 `|` 分隔）
   - 纯文本 URI 列表

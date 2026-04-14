@@ -89,6 +89,14 @@ def test_render_mihomo_yaml() -> None:
     assert doc["proxy-groups"][0]["name"] == "PROXY"
 
 
+def test_render_mihomo_proxy_entries_are_flow_style() -> None:
+    text = _make_ss_uri()
+    parsed = parse_subscription(text)
+    output, warnings, _ = convert_nodes(parsed.nodes, "mihomo")
+    assert warnings == []
+    assert "- {name: ss-node, type: ss, server: ss.example.com, port: 8388" in output
+
+
 def test_render_sing_box_json_with_ssr_warning() -> None:
     text = "\n".join([_make_ss_uri(), _make_ssr_uri()])
     parsed = parse_subscription(text)
@@ -208,6 +216,28 @@ proxies:
     result = parse_subscription(yaml_text)
     assert len(result.nodes) == 2
     assert {node.type for node in result.nodes} == {"ss", "vmess"}
+
+
+def test_parse_clash_yaml_anytls_proxy_maps_to_trojan() -> None:
+    yaml_text = """
+proxies:
+  - name: anytls-node
+    type: anytls
+    server: tr.example.com
+    port: 443
+    password: pass
+    sni: cdn.example.com
+    skip-cert-verify: true
+"""
+    result = parse_subscription(yaml_text)
+    assert len(result.nodes) == 1
+    assert result.warnings == []
+    node = result.nodes[0]
+    assert node.type == "trojan"
+    assert node.params["password"] == "pass"
+    assert node.params["sni"] == "cdn.example.com"
+    assert node.params["skip_cert_verify"] is True
+    assert node.params["tls"] is True
 
 
 def test_proxy_providers_only_gives_single_warning() -> None:

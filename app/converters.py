@@ -39,6 +39,21 @@ ALLOWED_BUILTIN_TARGETS = {"DIRECT", "REJECT", "REJECT-DROP", "GLOBAL", "PASS", 
 MESL_SELECT_NAME = "🎯 Select"
 
 
+class _FlowStyleDict(dict):
+    """YAML helper: force one-line mapping style for proxy entries."""
+
+
+class _FlowStyleSafeDumper(yaml.SafeDumper):
+    pass
+
+
+def _flow_style_dict_representer(dumper: yaml.Dumper, data: _FlowStyleDict) -> yaml.Node:
+    return dumper.represent_mapping("tag:yaml.org,2002:map", data, flow_style=True)
+
+
+_FlowStyleSafeDumper.add_representer(_FlowStyleDict, _flow_style_dict_representer)
+
+
 @dataclass(slots=True)
 class AclPolicy:
     proxy_groups: list[dict[str, Any]] = field(default_factory=list)
@@ -621,7 +636,7 @@ def _build_mihomo_acl(nodes: list[ProxyNode], acl_text: str | None) -> tuple[lis
 
 
 def render_mihomo(nodes: list[ProxyNode], *, acl_text: str | None = None) -> tuple[str, list[str]]:
-    proxies = [node_to_mihomo_proxy(node) for node in nodes]
+    proxies = [_FlowStyleDict(node_to_mihomo_proxy(node)) for node in nodes]
     proxy_groups, rules, rule_providers, acl_warnings = _build_mihomo_acl(nodes, acl_text)
     config: dict[str, Any] = {
         "mixed-port": 7890,
@@ -634,7 +649,16 @@ def render_mihomo(nodes: list[ProxyNode], *, acl_text: str | None = None) -> tup
     }
     if rule_providers:
         config["rule-providers"] = rule_providers
-    return yaml.safe_dump(config, sort_keys=False, allow_unicode=True), acl_warnings
+    return (
+        yaml.dump(
+            config,
+            Dumper=_FlowStyleSafeDumper,
+            sort_keys=False,
+            allow_unicode=True,
+            width=4096,
+        ),
+        acl_warnings,
+    )
 
 
 def _build_singbox_tls(params: dict[str, Any], *, force: bool = False) -> dict[str, Any] | None:
