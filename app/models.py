@@ -9,6 +9,7 @@ ProxyType = Literal[
     "vmess",
     "vless",
     "trojan",
+    "anytls",
     "hysteria2",
     "tuic",
     "http",

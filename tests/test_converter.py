@@ -235,7 +235,7 @@ proxies:
     assert {node.type for node in result.nodes} == {"ss", "vmess"}
 
 
-def test_parse_clash_yaml_anytls_proxy_maps_to_trojan() -> None:
+def test_parse_clash_yaml_anytls_proxy_keeps_anytls_type() -> None:
     yaml_text = """
 proxies:
   - name: anytls-node
@@ -250,14 +250,14 @@ proxies:
     assert len(result.nodes) == 1
     assert result.warnings == []
     node = result.nodes[0]
-    assert node.type == "trojan"
+    assert node.type == "anytls"
     assert node.params["password"] == "pass"
     assert node.params["sni"] == "cdn.example.com"
     assert node.params["skip_cert_verify"] is True
     assert node.params["tls"] is True
 
 
-def test_parse_singbox_anytls_outbound_maps_to_trojan() -> None:
+def test_parse_singbox_anytls_outbound_keeps_anytls_type() -> None:
     json_text = """
 {
   "outbounds": [
@@ -280,12 +280,35 @@ def test_parse_singbox_anytls_outbound_maps_to_trojan() -> None:
     assert len(result.nodes) == 1
     assert result.warnings == []
     node = result.nodes[0]
-    assert node.type == "trojan"
+    assert node.type == "anytls"
     assert node.name == "anytls-node"
     assert node.params["password"] == "pass"
     assert node.params["tls"] is True
     assert node.params["sni"] == "cdn.example.com"
     assert node.params["skip_cert_verify"] is True
+
+
+def test_render_mihomo_keeps_anytls_type() -> None:
+    yaml_text = """
+proxies:
+  - name: anytls-node
+    type: anytls
+    server: tr.example.com
+    port: 443
+    password: pass
+    sni: cdn.example.com
+    idle-session-check-interval: 30
+    idle-session-timeout: 45
+    min-idle-session: 1
+"""
+    parsed = parse_subscription(yaml_text)
+    output, warnings, _ = convert_nodes(parsed.nodes, "mihomo")
+    assert warnings == []
+    doc = yaml.safe_load(output)
+    assert doc["proxies"][0]["type"] == "anytls"
+    assert doc["proxies"][0]["idle-session-check-interval"] == 30
+    assert doc["proxies"][0]["idle-session-timeout"] == 45
+    assert doc["proxies"][0]["min-idle-session"] == 1
 
 
 def test_proxy_providers_only_gives_single_warning() -> None:

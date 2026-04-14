@@ -461,7 +461,6 @@ def _parse_anytls(uri: str) -> ProxyNode:
     if not password or not server or port <= 0:
         raise ValueError("invalid anytls endpoint")
 
-    # anytls is normalized to trojan for Clash-compatible output.
     params: dict[str, Any] = {
         "password": password,
         "udp": True,
@@ -470,9 +469,20 @@ def _parse_anytls(uri: str) -> ProxyNode:
     transport = _parse_transport_from_query(qs)
     params.update(transport)
     _apply_tls_query_params(params, qs, force_tls=True)
+    idle_check_interval = _int_or_none(
+        _first(qs, "idle-session-check-interval") or _first(qs, "idle_session_check_interval")
+    )
+    idle_timeout = _int_or_none(_first(qs, "idle-session-timeout") or _first(qs, "idle_session_timeout"))
+    min_idle_session = _int_or_none(_first(qs, "min-idle-session") or _first(qs, "min_idle_session"))
+    if idle_check_interval is not None:
+        params["idle_session_check_interval"] = idle_check_interval
+    if idle_timeout is not None:
+        params["idle_session_timeout"] = idle_timeout
+    if min_idle_session is not None:
+        params["min_idle_session"] = min_idle_session
 
     name = _normalize_name(unquote(parsed.fragment) if parsed.fragment else None, f"anytls-{server}:{port}")
-    return ProxyNode(name=name, type="trojan", server=server, port=port, params=params, source_uri=uri)
+    return ProxyNode(name=name, type="anytls", server=server, port=port, params=params, source_uri=uri)
 
 
 def _parse_hysteria2(uri: str) -> ProxyNode:
@@ -700,8 +710,19 @@ def _node_from_clash_proxy(proxy: dict[str, Any]) -> ProxyNode:
         if "tls" not in params:
             params["tls"] = True
     elif ptype == "anytls":
-        ptype = "trojan"
         params["password"] = str(_first_key(proxy, "password", "id", "uuid", "user") or "")
+        idle_check_interval = _safe_int(
+            _first_key(proxy, "idle-session-check-interval", "idle_session_check_interval"),
+            default=-1,
+        )
+        idle_timeout = _safe_int(_first_key(proxy, "idle-session-timeout", "idle_session_timeout"), default=-1)
+        min_idle_session = _safe_int(_first_key(proxy, "min-idle-session", "min_idle_session"), default=-1)
+        if idle_check_interval >= 0:
+            params["idle_session_check_interval"] = idle_check_interval
+        if idle_timeout >= 0:
+            params["idle_session_timeout"] = idle_timeout
+        if min_idle_session >= 0:
+            params["min_idle_session"] = min_idle_session
         _apply_clash_transport(proxy, params)
         _apply_clash_tls(proxy, params)
         if "tls" not in params:
@@ -761,7 +782,7 @@ def _node_from_singbox_outbound(outbound: dict[str, Any]) -> ProxyNode | None:
         "vmess": "vmess",
         "vless": "vless",
         "trojan": "trojan",
-        "anytls": "trojan",
+        "anytls": "anytls",
         "hysteria2": "hysteria2",
         "tuic": "tuic",
         "http": "http",
@@ -791,8 +812,27 @@ def _node_from_singbox_outbound(outbound: dict[str, Any]) -> ProxyNode | None:
             params["flow"] = str(_first_key(outbound, "flow"))
         if _first_key(outbound, "packet_encoding"):
             params["packet_encoding"] = str(_first_key(outbound, "packet_encoding"))
-    elif ptype == "trojan":
+    elif ptype in {"trojan", "anytls"}:
         params["password"] = str(_first_key(outbound, "password") or "")
+        if ptype == "anytls":
+            idle_check_interval = _safe_int(
+                _first_key(outbound, "idle_session_check_interval", "idle-session-check-interval"),
+                default=-1,
+            )
+            idle_timeout = _safe_int(
+                _first_key(outbound, "idle_session_timeout", "idle-session-timeout"),
+                default=-1,
+            )
+            min_idle_session = _safe_int(
+                _first_key(outbound, "min_idle_session", "min-idle-session"),
+                default=-1,
+            )
+            if idle_check_interval >= 0:
+                params["idle_session_check_interval"] = idle_check_interval
+            if idle_timeout >= 0:
+                params["idle_session_timeout"] = idle_timeout
+            if min_idle_session >= 0:
+                params["min_idle_session"] = min_idle_session
     elif ptype == "hysteria2":
         params["password"] = str(_first_key(outbound, "password") or "")
         if _first_key(outbound, "up_mbps"):

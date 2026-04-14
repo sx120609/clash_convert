@@ -175,6 +175,15 @@ def node_to_mihomo_proxy(node: ProxyNode) -> dict[str, Any]:
         out["password"] = params.get("password", "")
         _transport_fields_for_mihomo(node, out)
         _tls_fields_for_mihomo(node, out)
+    elif node.type == "anytls":
+        out["password"] = params.get("password", "")
+        if "idle_session_check_interval" in params:
+            out["idle-session-check-interval"] = int(params["idle_session_check_interval"])
+        if "idle_session_timeout" in params:
+            out["idle-session-timeout"] = int(params["idle_session_timeout"])
+        if "min_idle_session" in params:
+            out["min-idle-session"] = int(params["min_idle_session"])
+        _tls_fields_for_mihomo(node, out)
     elif node.type == "hysteria2":
         out["password"] = params.get("password", "")
         if params.get("up"):
@@ -1253,6 +1262,27 @@ def _node_to_uri(node: ProxyNode) -> str:
         query_str = f"?{'&'.join(query)}" if query else ""
         return (
             f"trojan://{quote(str(params.get('password', '')))}@{node.server}:{node.port}{query_str}"
+            f"#{quote(node.name)}"
+        )
+    if node.type == "anytls":
+        query: list[str] = []
+        if params.get("sni"):
+            query.append(f"sni={quote(str(params['sni']))}")
+        if "skip_cert_verify" in params:
+            query.append(f"insecure={1 if params.get('skip_cert_verify') else 0}")
+        if params.get("alpn"):
+            query.append(f"alpn={quote(','.join(str(item) for item in params['alpn']))}")
+        if "idle_session_check_interval" in params:
+            query.append(
+                f"idle-session-check-interval={quote(str(params['idle_session_check_interval']))}"
+            )
+        if "idle_session_timeout" in params:
+            query.append(f"idle-session-timeout={quote(str(params['idle_session_timeout']))}")
+        if "min_idle_session" in params:
+            query.append(f"min-idle-session={quote(str(params['min_idle_session']))}")
+        query_str = f"?{'&'.join(query)}" if query else ""
+        return (
+            f"anytls://{quote(str(params.get('password', '')))}@{node.server}:{node.port}{query_str}"
             f"#{quote(node.name)}"
         )
     if node.type == "hysteria2":
