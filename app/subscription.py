@@ -31,6 +31,26 @@ SUPPORTED_SCHEMES = {
 }
 
 
+def _looks_like_structured_config(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if stripped.startswith("{") or stripped.startswith("["):
+        return True
+    lowered = stripped.lower()
+    markers = (
+        "proxies:",
+        "proxy-groups:",
+        "proxy-providers:",
+        "rules:",
+        "rule-providers:",
+        "outbounds:",
+        "mixed-port:",
+        "port:",
+    )
+    return any(marker in lowered for marker in markers)
+
+
 def _decode_base64_urlsafe(data: str) -> bytes:
     cleaned = re.sub(r"\s+", "", data).translate(_URLSAFE)
     if not cleaned:
@@ -741,6 +761,7 @@ def _node_from_singbox_outbound(outbound: dict[str, Any]) -> ProxyNode | None:
         "vmess": "vmess",
         "vless": "vless",
         "trojan": "trojan",
+        "anytls": "trojan",
         "hysteria2": "hysteria2",
         "tuic": "tuic",
         "http": "http",
@@ -843,12 +864,7 @@ def _parse_structured_payload(text: str) -> ParseResult:
     if not stripped:
         return ParseResult(nodes=[], warnings=[])
 
-    maybe_structured = (
-        stripped.startswith("{")
-        or stripped.startswith("[")
-        or any(marker in stripped for marker in ("proxies:", "outbounds:", "proxy-providers:", "mixed-port:"))
-    )
-    if not maybe_structured:
+    if not _looks_like_structured_config(stripped):
         return ParseResult(nodes=[], warnings=[])
 
     try:
@@ -957,11 +973,11 @@ def normalize_subscription_payload(payload: str) -> str:
     if "://" in raw:
         return raw
     decoded = _try_decode_text(raw)
-    if decoded and "://" in decoded:
+    if decoded and ("://" in decoded or _looks_like_structured_config(decoded)):
         return decoded
     compact = re.sub(r"\s+", "", raw)
     decoded_compact = _try_decode_text(compact)
-    if decoded_compact and "://" in decoded_compact:
+    if decoded_compact and ("://" in decoded_compact or _looks_like_structured_config(decoded_compact)):
         return decoded_compact
     return raw
 

@@ -207,7 +207,7 @@ async def healthz() -> dict[str, str]:
 async def supported() -> dict[str, object]:
     return {
         "targets": sorted(SUPPORTED_TARGETS),
-        "protocols": ["ss", "ssr", "vmess", "vless", "trojan", "hysteria2", "tuic", "socks5", "http"],
+        "protocols": ["ss", "ssr", "vmess", "vless", "trojan", "anytls", "hysteria2", "tuic", "socks5", "http"],
         "note": "Some targets may support only a subset of protocols.",
         "acl": {
             "format": "clash rule lines or ACL4SSR custom syntax",

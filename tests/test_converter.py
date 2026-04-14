@@ -77,6 +77,23 @@ def test_parse_base64_subscription_payload() -> None:
     assert not result.warnings
 
 
+def test_parse_base64_clash_yaml_payload() -> None:
+    yaml_text = """
+proxies:
+  - name: ss-node
+    type: ss
+    server: ss.example.com
+    port: 8388
+    cipher: aes-128-gcm
+    password: pass
+"""
+    encoded = base64.b64encode(yaml_text.encode("utf-8")).decode("utf-8")
+    result = parse_subscription(encoded)
+    assert len(result.nodes) == 1
+    assert result.warnings == []
+    assert result.nodes[0].type == "ss"
+
+
 def test_render_mihomo_yaml() -> None:
     text = "\n".join([_make_ss_uri(), _make_vmess_uri()])
     parsed = parse_subscription(text)
@@ -238,6 +255,37 @@ proxies:
     assert node.params["sni"] == "cdn.example.com"
     assert node.params["skip_cert_verify"] is True
     assert node.params["tls"] is True
+
+
+def test_parse_singbox_anytls_outbound_maps_to_trojan() -> None:
+    json_text = """
+{
+  "outbounds": [
+    {
+      "type": "anytls",
+      "tag": "anytls-node",
+      "server": "tr.example.com",
+      "server_port": 443,
+      "password": "pass",
+      "tls": {
+        "enabled": true,
+        "server_name": "cdn.example.com",
+        "insecure": true
+      }
+    }
+  ]
+}
+"""
+    result = parse_subscription(json_text)
+    assert len(result.nodes) == 1
+    assert result.warnings == []
+    node = result.nodes[0]
+    assert node.type == "trojan"
+    assert node.name == "anytls-node"
+    assert node.params["password"] == "pass"
+    assert node.params["tls"] is True
+    assert node.params["sni"] == "cdn.example.com"
+    assert node.params["skip_cert_verify"] is True
 
 
 def test_proxy_providers_only_gives_single_warning() -> None:
