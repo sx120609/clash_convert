@@ -314,7 +314,7 @@ stop() {
   if ! is_running; then
     echo "Not running."
     rm -f "$PID_FILE"
-    exit 0
+    return 0
   fi
 
   local pid
