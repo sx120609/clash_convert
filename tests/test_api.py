@@ -213,3 +213,152 @@ def test_convert_supports_surge_target() -> None:
     assert resolved.status_code == 200
     assert "[Proxy]" in resolved.text
     assert "ss-node = ss, ss.example.com, 8388" in resolved.text
+
+
+def test_convert_supports_node_include_filter() -> None:
+    client = TestClient(app)
+    source = "\n".join(
+        [
+            _make_ss_uri_with_host("hk.example.com", "HK-1"),
+            _make_ss_uri_with_host("us.example.com", "US-1"),
+        ]
+    )
+    response = client.post(
+        "/api/convert",
+        json={
+            "source": source,
+            "source_type": "text",
+            "target": "mihomo",
+            "node_include": "HK",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["node_count"] == 1
+    resolved = client.get(payload["result_url"])
+    assert resolved.status_code == 200
+    assert "hk.example.com" in resolved.text
+    assert "us.example.com" not in resolved.text
+
+
+def test_convert_supports_node_exclude_filter() -> None:
+    client = TestClient(app)
+    source = "\n".join(
+        [
+            _make_ss_uri_with_host("hk.example.com", "HK-1"),
+            _make_ss_uri_with_host("us.example.com", "US-1"),
+        ]
+    )
+    response = client.post(
+        "/api/convert",
+        json={
+            "source": source,
+            "source_type": "text",
+            "target": "mihomo",
+            "node_exclude": "US",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["node_count"] == 1
+    resolved = client.get(payload["result_url"])
+    assert resolved.status_code == 200
+    assert "hk.example.com" in resolved.text
+    assert "us.example.com" not in resolved.text
+
+
+def test_convert_supports_node_filter_regex() -> None:
+    client = TestClient(app)
+    source = "\n".join(
+        [
+            _make_ss_uri_with_host("hk.example.com", "HK-1"),
+            _make_ss_uri_with_host("us.example.com", "US-1"),
+        ]
+    )
+    response = client.post(
+        "/api/convert",
+        json={
+            "source": source,
+            "source_type": "text",
+            "target": "mihomo",
+            "node_include": "^HK-\\d+$",
+            "node_filter_regex": True,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["node_count"] == 1
+    resolved = client.get(payload["result_url"])
+    assert resolved.status_code == 200
+    assert "hk.example.com" in resolved.text
+    assert "us.example.com" not in resolved.text
+
+
+def test_convert_rejects_invalid_node_filter_regex() -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/api/convert",
+        json={
+            "source": _make_ss_uri(),
+            "source_type": "text",
+            "target": "mihomo",
+            "node_include": "[abc",
+            "node_filter_regex": True,
+        },
+    )
+    assert response.status_code == 400
+    payload = response.json()
+    assert "invalid include regex" in payload["detail"]
+
+
+def test_dynamic_link_keeps_node_filter_settings(monkeypatch) -> None:
+    async def fake_fetch_subscription(url: str, timeout_sec: float = 15.0) -> str:  # noqa: ARG001
+        return "\n".join(
+            [
+                _make_ss_uri_with_host("hk.example.com", "HK-1"),
+                _make_ss_uri_with_host("us.example.com", "US-1"),
+            ]
+        )
+
+    monkeypatch.setattr("app.main.fetch_subscription", fake_fetch_subscription)
+    client = TestClient(app)
+    response = client.post(
+        "/api/convert",
+        json={
+            "source": "https://example.com/sub",
+            "source_type": "url",
+            "target": "mihomo",
+            "node_exclude": "US",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["node_count"] == 1
+    resolved = client.get(payload["result_url"])
+    assert resolved.status_code == 200
+    assert "hk.example.com" in resolved.text
+    assert "us.example.com" not in resolved.text
+
+
+def test_sub_endpoint_supports_node_filters(monkeypatch) -> None:
+    async def fake_fetch_subscription(url: str, timeout_sec: float = 15.0) -> str:  # noqa: ARG001
+        return "\n".join(
+            [
+                _make_ss_uri_with_host("hk.example.com", "HK-1"),
+                _make_ss_uri_with_host("us.example.com", "US-1"),
+            ]
+        )
+
+    monkeypatch.setattr("app.main.fetch_subscription", fake_fetch_subscription)
+    client = TestClient(app)
+    response = client.get(
+        "/sub",
+        params={
+            "url": "https://example.com/sub",
+            "node_include": "^HK-\\d+$",
+            "node_filter_regex": "true",
+        },
+    )
+    assert response.status_code == 200
+    assert "hk.example.com" in response.text
+    assert "us.example.com" not in response.text

@@ -38,6 +38,9 @@ class ConvertRequest(BaseModel):
     acl_preset: str | None = None
     acl_text: str | None = None
     acl_url: str | None = None
+    node_include: str | None = None
+    node_exclude: str | None = None
+    node_filter_regex: bool = False
 
 
 class ConvertResponse(BaseModel):
@@ -169,16 +172,99 @@ def _parse_payloads(payloads: list[str]) -> tuple[list[ProxyNode], list[str]]:
     return nodes, warnings
 
 
+def _split_filter_items(raw: str | None, *, use_regex: bool) -> list[str]:
+    if not raw:
+        return []
+    normalized = raw.replace("\r", "\n")
+    parts = normalized.splitlines() if use_regex else re.split(r"[\n|]+", normalized)
+    items: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        item = part.strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        items.append(item)
+    return items
+
+
+def _filter_nodes(
+    nodes: list[ProxyNode],
+    *,
+    include: str | None,
+    exclude: str | None,
+    use_regex: bool,
+) -> tuple[list[ProxyNode], list[str]]:
+    include_items = _split_filter_items(include, use_regex=use_regex)
+    exclude_items = _split_filter_items(exclude, use_regex=use_regex)
+    if not include_items and not exclude_items:
+        return nodes, []
+
+    include_patterns: list[re.Pattern[str]] = []
+    exclude_patterns: list[re.Pattern[str]] = []
+    if use_regex:
+        for item in include_items:
+            try:
+                include_patterns.append(re.compile(item))
+            except re.error as exc:
+                raise HTTPException(status_code=400, detail=f"invalid include regex '{item}': {exc}") from exc
+        for item in exclude_items:
+            try:
+                exclude_patterns.append(re.compile(item))
+            except re.error as exc:
+                raise HTTPException(status_code=400, detail=f"invalid exclude regex '{item}': {exc}") from exc
+
+    def matches(name: str, items: list[str], patterns: list[re.Pattern[str]]) -> bool:
+        if use_regex:
+            return any(pattern.search(name) for pattern in patterns)
+        lowered = name.lower()
+        return any(item.lower() in lowered for item in items)
+
+    original = len(nodes)
+    filtered: list[ProxyNode] = []
+    include_removed = 0
+    exclude_removed = 0
+    for node in nodes:
+        if include_items and not matches(node.name, include_items, include_patterns):
+            include_removed += 1
+            continue
+        if exclude_items and matches(node.name, exclude_items, exclude_patterns):
+            exclude_removed += 1
+            continue
+        filtered.append(node)
+
+    mode = "regex" if use_regex else "keyword"
+    warnings = [
+        "node filter applied "
+        f"({mode}): {original} -> {len(filtered)} "
+        f"(include removed {include_removed}, exclude removed {exclude_removed})"
+    ]
+    return filtered, warnings
+
+
 def _convert_payloads(
     payloads: list[str],
     *,
     target: str,
     uri_as_base64: bool,
     acl_text: str,
+    node_include: str | None = None,
+    node_exclude: str | None = None,
+    node_filter_regex: bool = False,
 ) -> tuple[str, list[str], str, int]:
     nodes, parse_warnings = _parse_payloads(payloads)
+    nodes, filter_warnings = _filter_nodes(
+        nodes,
+        include=node_include,
+        exclude=node_exclude,
+        use_regex=node_filter_regex,
+    )
     if not nodes:
-        all_warnings = parse_warnings or ["no valid nodes found in source payload"]
+        all_warnings = parse_warnings + filter_warnings
+        if not all_warnings:
+            all_warnings = ["no valid nodes found in source payload"]
+        elif node_include or node_exclude:
+            all_warnings.append("all nodes were filtered out")
         raise HTTPException(status_code=400, detail={"warnings": all_warnings})
     try:
         output, target_warnings, mime = convert_nodes(
@@ -189,7 +275,7 @@ def _convert_payloads(
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    warnings = parse_warnings + target_warnings
+    warnings = parse_warnings + filter_warnings + target_warnings
     return output, warnings, mime, len(nodes)
 
 
@@ -234,6 +320,9 @@ async def convert(req: ConvertRequest, request: Request) -> ConvertResponse:
         target=req.target,
         uri_as_base64=req.uri_as_base64,
         acl_text=acl_text,
+        node_include=req.node_include,
+        node_exclude=req.node_exclude,
+        node_filter_regex=req.node_filter_regex,
     )
     warnings = source_warnings + warnings
     if req.source_type == "url":
@@ -242,6 +331,9 @@ async def convert(req: ConvertRequest, request: Request) -> ConvertResponse:
             target=req.target,
             uri_as_base64=req.uri_as_base64,
             acl_text=acl_text,
+            node_include=req.node_include or "",
+            node_exclude=req.node_exclude or "",
+            node_filter_regex=req.node_filter_regex,
         )
     else:
         token, record = LINK_STORE.create_static(
@@ -250,6 +342,9 @@ async def convert(req: ConvertRequest, request: Request) -> ConvertResponse:
             target=req.target,
             uri_as_base64=req.uri_as_base64,
             acl_text=acl_text,
+            node_include=req.node_include or "",
+            node_exclude=req.node_exclude or "",
+            node_filter_regex=req.node_filter_regex,
         )
 
     return ConvertResponse(
@@ -287,6 +382,9 @@ async def resolve_link(token: str) -> PlainTextResponse:
             target=record.target,
             uri_as_base64=record.uri_as_base64,
             acl_text=record.acl_text,
+            node_include=record.node_include,
+            node_exclude=record.node_exclude,
+            node_filter_regex=record.node_filter_regex,
         )
     except HTTPException:
         raise
@@ -303,6 +401,9 @@ async def convert_subscription(
     acl_preset: str = Query("", description="acl preset id"),
     acl: str = Query("", description="acl text"),
     acl_url: str = Query("", description="acl URL"),
+    node_include: str = Query("", description="keep nodes that match keywords/regex"),
+    node_exclude: str = Query("", description="drop nodes that match keywords/regex"),
+    node_filter_regex: bool = Query(False, description="treat include/exclude as regex"),
 ) -> PlainTextResponse:
     if target not in SUPPORTED_TARGETS:
         raise HTTPException(status_code=400, detail=f"unsupported target: {target}")
@@ -335,5 +436,8 @@ async def convert_subscription(
         target=target,
         uri_as_base64=uri_as_base64,
         acl_text=acl_text,
+        node_include=node_include,
+        node_exclude=node_exclude,
+        node_filter_regex=node_filter_regex,
     )
     return PlainTextResponse(content=output, media_type=mime)

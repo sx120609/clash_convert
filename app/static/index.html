@@ -606,6 +606,20 @@
         </div>
 
         <div class="row">
+          <label for="nodeIncludeInput">仅保留包含关键词的节点（可选，换行或 | 分隔）</label>
+          <textarea id="nodeIncludeInput" placeholder="香港|HK"></textarea>
+        </div>
+
+        <div class="row">
+          <label for="nodeExcludeInput">移除包含关键词的节点（可选，换行或 | 分隔）</label>
+          <textarea id="nodeExcludeInput" placeholder="流量|过期"></textarea>
+        </div>
+
+        <div class="row">
+          <label class="chip"><input id="nodeFilterRegex" type="checkbox" /> 筛选词按正则表达式匹配</label>
+        </div>
+
+        <div class="row">
           <label for="aclPresetSelect">ACL 规则预设（参考 ACL4SSR-sub）</label>
           <select id="aclPresetSelect">
             <option value="">不使用 ACL</option>
@@ -648,6 +662,9 @@
     const uriBase64 = document.getElementById("uriBase64");
     const urlInput = document.getElementById("urlInput");
     const textInput = document.getElementById("textInput");
+    const nodeIncludeInput = document.getElementById("nodeIncludeInput");
+    const nodeExcludeInput = document.getElementById("nodeExcludeInput");
+    const nodeFilterRegex = document.getElementById("nodeFilterRegex");
     const aclPresetSelect = document.getElementById("aclPresetSelect");
     const aclUrlInput = document.getElementById("aclUrlInput");
     const statusEl = document.getElementById("status");
@@ -728,6 +745,9 @@
             source_type: sourceType,
             target: targetSelect.value,
             uri_as_base64: uriBase64.checked,
+            node_include: nodeIncludeInput.value.trim() || null,
+            node_exclude: nodeExcludeInput.value.trim() || null,
+            node_filter_regex: nodeFilterRegex.checked,
             acl_preset: aclPresetSelect.value || null,
             acl_url: aclUrlInput.value.trim() || null,
           }),

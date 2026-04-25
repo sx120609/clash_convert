@@ -57,6 +57,9 @@ bash start.sh stop
   - `source_type=url` 时，`source` 支持多个 URL（换行或 `|` 分隔）
   - `acl_preset`: ACL 预设 ID（可用值见 `GET /api/acl-presets`）
   - `acl_text` / `acl_url`: ACL 规则（对 `mihomo` / `surge` 生效）
+  - `node_include`: 仅保留匹配关键词的节点（按节点名匹配；支持换行或 `|` 分隔）
+  - `node_exclude`: 移除匹配关键词的节点（按节点名匹配；支持换行或 `|` 分隔）
+  - `node_filter_regex`: `true` 时将 `node_include` / `node_exclude` 视为正则表达式
   - 返回 `result_url`：可直接打开获取转换结果内容
   - 返回的链接默认有效期约 6 小时
 - `GET /api/acl-presets`
@@ -67,6 +70,7 @@ bash start.sh stop
   - 方便作为“转换后订阅链接”直接给客户端订阅
   - `url` 支持多个 URL（换行或 `|` 分隔）
   - 支持 `acl_preset`、`acl`、`acl_url` 参数
+  - 支持 `node_include`、`node_exclude`、`node_filter_regex` 节点筛选参数
 
 ## 测试
 
