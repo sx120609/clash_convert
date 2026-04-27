@@ -362,3 +362,43 @@ def test_sub_endpoint_supports_node_filters(monkeypatch) -> None:
     assert response.status_code == 200
     assert "hk.example.com" in response.text
     assert "us.example.com" not in response.text
+
+
+def test_convert_result_supports_custom_output_filename() -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/api/convert",
+        json={
+            "source": _make_ss_uri(),
+            "source_type": "text",
+            "target": "surge",
+            "output_filename": "team-profile",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    resolved = client.get(payload["result_url"])
+    assert resolved.status_code == 200
+    disposition = resolved.headers.get("content-disposition", "")
+    assert "attachment;" in disposition
+    assert "team-profile.conf" in disposition
+
+
+def test_sub_endpoint_supports_custom_output_filename(monkeypatch) -> None:
+    async def fake_fetch_subscription(url: str, timeout_sec: float = 15.0) -> str:  # noqa: ARG001
+        return _make_ss_uri()
+
+    monkeypatch.setattr("app.main.fetch_subscription", fake_fetch_subscription)
+    client = TestClient(app)
+    response = client.get(
+        "/sub",
+        params={
+            "url": "https://example.com/sub",
+            "target": "mihomo",
+            "output_filename": "my file",
+        },
+    )
+    assert response.status_code == 200
+    disposition = response.headers.get("content-disposition", "")
+    assert "attachment;" in disposition
+    assert "my file.yaml" in disposition or "my%20file.yaml" in disposition

@@ -20,6 +20,7 @@ class LinkRecord:
     node_include: str = ""
     node_exclude: str = ""
     node_filter_regex: bool = False
+    output_filename: str = ""
     source_url: str | None = None
     content: str | None = None
     mime: str | None = None
@@ -59,6 +60,7 @@ class LinkStore:
         node_include: str = "",
         node_exclude: str = "",
         node_filter_regex: bool = False,
+        output_filename: str = "",
         ttl_sec: int | None = None,
     ) -> tuple[str, LinkRecord]:
         ttl = ttl_sec if ttl_sec is not None else self.default_ttl_sec
@@ -73,6 +75,7 @@ class LinkStore:
             node_include=node_include,
             node_exclude=node_exclude,
             node_filter_regex=node_filter_regex,
+            output_filename=output_filename,
             content=content,
             mime=mime,
         )
@@ -92,6 +95,7 @@ class LinkStore:
         node_include: str = "",
         node_exclude: str = "",
         node_filter_regex: bool = False,
+        output_filename: str = "",
         ttl_sec: int | None = None,
     ) -> tuple[str, LinkRecord]:
         ttl = ttl_sec if ttl_sec is not None else self.default_ttl_sec
@@ -106,6 +110,7 @@ class LinkStore:
             node_include=node_include,
             node_exclude=node_exclude,
             node_filter_regex=node_filter_regex,
+            output_filename=output_filename,
             source_url=source_url,
         )
         with self._lock:

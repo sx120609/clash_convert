@@ -4,7 +4,7 @@ import asyncio
 import re
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
+from urllib.parse import quote as url_quote, urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -41,6 +41,7 @@ class ConvertRequest(BaseModel):
     node_include: str | None = None
     node_exclude: str | None = None
     node_filter_regex: bool = False
+    output_filename: str | None = None
 
 
 class ConvertResponse(BaseModel):
@@ -150,6 +151,49 @@ def _build_link_url(request: Request, token: str) -> str:
         return f"{scheme}://{host}{path}"
 
     return str(request.url_for("resolve_link", token=token))
+
+
+def _default_ext_for_target(target: str) -> str:
+    if target == "mihomo":
+        return "yaml"
+    if target == "sing-box":
+        return "json"
+    if target == "surge":
+        return "conf"
+    return "txt"
+
+
+def _normalize_output_filename(name: str | None, *, target: str) -> str:
+    raw = (name or "").strip()
+    if raw:
+        raw = re.sub(r"\s+", " ", raw)
+        raw = re.sub(r"[\\/:*?\"<>|]+", "_", raw)
+        raw = raw.replace("\x00", "")
+        raw = raw.strip(" .")
+    if not raw:
+        raw = f"subscription-{target}"
+
+    # Keep room for extension; avoid very long response headers.
+    if len(raw) > 110:
+        raw = raw[:110].rstrip(" .")
+    if not raw:
+        raw = f"subscription-{target}"
+
+    has_known_ext = bool(re.search(r"\.[A-Za-z0-9]{1,12}$", raw))
+    if not has_known_ext:
+        raw = f"{raw}.{_default_ext_for_target(target)}"
+    return raw
+
+
+def _build_content_disposition(filename: str) -> str:
+    fallback = "".join(
+        char if (32 <= ord(char) < 127 and char not in {'"', "\\", ";"}) else "_"
+        for char in filename
+    ).strip()
+    if not fallback:
+        fallback = "subscription.txt"
+    encoded = url_quote(filename, safe="")
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{encoded}'
 
 
 def _ensure_unique_names(nodes: list[ProxyNode]) -> None:
@@ -325,6 +369,7 @@ async def convert(req: ConvertRequest, request: Request) -> ConvertResponse:
         node_filter_regex=req.node_filter_regex,
     )
     warnings = source_warnings + warnings
+    output_filename = _normalize_output_filename(req.output_filename, target=req.target)
     if req.source_type == "url":
         token, record = LINK_STORE.create_dynamic(
             source_url=source_spec or req.source.strip(),
@@ -334,6 +379,7 @@ async def convert(req: ConvertRequest, request: Request) -> ConvertResponse:
             node_include=req.node_include or "",
             node_exclude=req.node_exclude or "",
             node_filter_regex=req.node_filter_regex,
+            output_filename=output_filename,
         )
     else:
         token, record = LINK_STORE.create_static(
@@ -345,6 +391,7 @@ async def convert(req: ConvertRequest, request: Request) -> ConvertResponse:
             node_include=req.node_include or "",
             node_exclude=req.node_exclude or "",
             node_filter_regex=req.node_filter_regex,
+            output_filename=output_filename,
         )
 
     return ConvertResponse(
@@ -365,7 +412,9 @@ async def resolve_link(token: str) -> PlainTextResponse:
     if record.kind == "static":
         assert record.content is not None
         assert record.mime is not None
-        return PlainTextResponse(content=record.content, media_type=record.mime)
+        filename = _normalize_output_filename(record.output_filename, target=record.target)
+        headers = {"Content-Disposition": _build_content_disposition(filename)}
+        return PlainTextResponse(content=record.content, media_type=record.mime, headers=headers)
 
     if not record.source_url:
         raise HTTPException(status_code=500, detail="invalid link record")
@@ -390,7 +439,9 @@ async def resolve_link(token: str) -> PlainTextResponse:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"failed to render output: {exc}") from exc
-    return PlainTextResponse(content=output, media_type=mime)
+    filename = _normalize_output_filename(record.output_filename, target=record.target)
+    headers = {"Content-Disposition": _build_content_disposition(filename)}
+    return PlainTextResponse(content=output, media_type=mime, headers=headers)
 
 
 @app.get("/sub")
@@ -404,6 +455,7 @@ async def convert_subscription(
     node_include: str = Query("", description="keep nodes that match keywords/regex"),
     node_exclude: str = Query("", description="drop nodes that match keywords/regex"),
     node_filter_regex: bool = Query(False, description="treat include/exclude as regex"),
+    output_filename: str = Query("", description="custom output filename"),
 ) -> PlainTextResponse:
     if target not in SUPPORTED_TARGETS:
         raise HTTPException(status_code=400, detail=f"unsupported target: {target}")
@@ -440,4 +492,6 @@ async def convert_subscription(
         node_exclude=node_exclude,
         node_filter_regex=node_filter_regex,
     )
-    return PlainTextResponse(content=output, media_type=mime)
+    filename = _normalize_output_filename(output_filename, target=target)
+    headers = {"Content-Disposition": _build_content_disposition(filename)}
+    return PlainTextResponse(content=output, media_type=mime, headers=headers)
