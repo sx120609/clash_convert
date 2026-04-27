@@ -198,6 +198,53 @@ rules:
     assert "🎯 Select" not in members
 
 
+def test_render_surge_anytls_proxy_entry() -> None:
+    yaml_text = """
+proxies:
+  - name: anytls-node
+    type: anytls
+    server: tr.example.com
+    port: 443
+    password: pass
+    sni: cdn.example.com
+    skip-cert-verify: true
+"""
+    parsed = parse_subscription(yaml_text)
+    output, warnings, _ = convert_nodes(parsed.nodes, "surge")
+    assert warnings == []
+    assert "anytls-node = anytls, tr.example.com, 443, password=pass, sni=cdn.example.com, skip-cert-verify=true" in output
+    assert "PROXY = select, anytls-node, DIRECT" in output
+
+
+def test_render_surge_avoids_case_insensitive_mutual_group_cycle() -> None:
+    text = _make_ss_uri()
+    parsed = parse_subscription(text)
+    acl = """
+proxy-groups:
+  - name: Select
+    type: select
+    proxies: [select, Fallback, DIRECT]
+  - name: Fallback
+    type: select
+    proxies: [Select, DIRECT]
+rules:
+  - MATCH,Select
+"""
+    output, warnings, _ = convert_nodes(parsed.nodes, "surge", acl_text=acl)
+    assert warnings == []
+
+    select_line = next((line for line in output.splitlines() if line.startswith("Select = select,")), "")
+    fallback_line = next((line for line in output.splitlines() if line.startswith("Fallback = select,")), "")
+    assert select_line
+    assert fallback_line
+
+    select_members = [item.strip() for item in select_line.split("=", 1)[1].split(",")[1:]]
+    fallback_members = [item.strip() for item in fallback_line.split("=", 1)[1].split(",")[1:]]
+    assert "Select" not in select_members
+    assert "select" not in select_members
+    assert "Select" not in fallback_members
+
+
 def test_render_uri_base64() -> None:
     text = "\n".join([_make_ss_uri(), _make_vmess_uri()])
     parsed = parse_subscription(text)

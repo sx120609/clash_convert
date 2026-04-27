@@ -541,7 +541,7 @@ def parse_acl_text(acl_text: str, nodes: list[ProxyNode]) -> AclPolicy:
                 proxy = str(item).strip()
                 if not proxy:
                     continue
-                if proxy == group_name:
+                if proxy.casefold() == group_name.casefold():
                     continue
                 if is_mesl_template and group_name == MESL_SELECT_NAME and proxy.lower() == "select":
                     continue
@@ -896,11 +896,22 @@ def _surge_safe_name(name: str, used: set[str]) -> str:
     base = base.replace(",", "_").replace("=", "_")
     final = base
     index = 2
-    while final in used:
+    used_casefold = {item.casefold() for item in used}
+    while final.casefold() in used_casefold:
         final = f"{base}-{index}"
         index += 1
     used.add(final)
     return final
+
+
+def _surge_lookup_name(name: str, mapping: dict[str, str]) -> str | None:
+    if name in mapping:
+        return mapping[name]
+    lower_name = name.casefold()
+    for key, value in mapping.items():
+        if key.casefold() == lower_name:
+            return value
+    return None
 
 
 def _surge_resolve_builtin_target(target: str, default_policy: str) -> str | None:
@@ -926,14 +937,32 @@ def _surge_resolve_policy_target(
     value = (target or "").strip()
     if not value:
         return default_policy
-    if value in proxy_name_map:
-        return proxy_name_map[value]
-    if value in group_name_map:
-        return group_name_map[value]
+    proxy = _surge_lookup_name(value, proxy_name_map)
+    if proxy:
+        return proxy
+    group = _surge_lookup_name(value, group_name_map)
+    if group:
+        return group
     builtin = _surge_resolve_builtin_target(value, default_policy)
     if builtin:
         return builtin
     return default_policy
+
+
+def _surge_has_path(adjacency: dict[str, set[str]], start: str, target: str) -> bool:
+    if start == target:
+        return True
+    stack = [start]
+    visited: set[str] = set()
+    while stack:
+        current = stack.pop()
+        if current == target:
+            return True
+        if current in visited:
+            continue
+        visited.add(current)
+        stack.extend(adjacency.get(current, ()))
+    return False
 
 
 def _surge_convert_rule(
@@ -1060,6 +1089,18 @@ def _build_surge_proxy_entry(node: ProxyNode, surge_name: str) -> tuple[str | No
             opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
         opts.extend(ws_opts)
         return f"{surge_name} = trojan, {node.server}, {node.port}, {', '.join(opts)}", None
+    if node.type == "anytls":
+        network = str(params.get("network") or "tcp").lower()
+        if network not in {"tcp", "none", ""}:
+            return None, f"{node.name}: anytls transport '{network}' is not supported by surge"
+        opts = [f"password={_quote_surge_value(params.get('password', ''))}"]
+        if params.get("sni"):
+            opts.append(f"sni={_quote_surge_value(params['sni'])}")
+        if "skip_cert_verify" in params:
+            opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
+        if "reuse" in params:
+            opts.append(f"reuse={str(bool(params['reuse'])).lower()}")
+        return f"{surge_name} = anytls, {node.server}, {node.port}, {', '.join(opts)}", None
     if node.type == "http":
         opts = []
         if params.get("username"):
@@ -1134,6 +1175,9 @@ def render_surge(nodes: list[ProxyNode], *, acl_text: str | None = None) -> tupl
 
     default_policy = group_name_map.get("PROXY") or next(iter(group_name_map.values()))
 
+    resolved_group_members: dict[str, list[str]] = {}
+    group_order: list[str] = []
+
     for group in raw_groups:
         raw_name = str(group.get("name", "")).strip()
         if not raw_name or raw_name not in group_name_map:
@@ -1152,7 +1196,7 @@ def render_surge(nodes: list[ProxyNode], *, acl_text: str | None = None) -> tupl
                     group_name_map=group_name_map,
                     default_policy=default_policy,
                 )
-                if resolved == safe_group_name:
+                if resolved.casefold() == safe_group_name.casefold():
                     # Avoid self-referential proxy groups in surge output.
                     continue
                 if resolved and resolved not in members:
@@ -1161,11 +1205,40 @@ def render_surge(nodes: list[ProxyNode], *, acl_text: str | None = None) -> tupl
             for member in proxy_names + ["DIRECT"]:
                 if member not in members:
                     members.append(member)
-        group_lines.append(f"{safe_group_name} = select, {', '.join(members)}")
 
-    if not group_lines:
+        resolved_group_members[safe_group_name] = members
+        group_order.append(safe_group_name)
+
+    if not resolved_group_members:
         fallback_members = list(dict.fromkeys(proxy_names + ["DIRECT"]))
         group_lines.append(f"{default_policy} = select, {', '.join(fallback_members)}")
+    else:
+        group_name_lookup = {name.casefold(): name for name in group_order}
+        adjacency: dict[str, set[str]] = {}
+        for safe_group_name in group_order:
+            source = safe_group_name.casefold()
+            members: list[str] = []
+            for member in resolved_group_members.get(safe_group_name, []):
+                member_value = member
+                target_group = group_name_lookup.get(member.casefold())
+                if target_group:
+                    target = target_group.casefold()
+                    if target == source:
+                        continue
+                    # Keep the generated graph acyclic to avoid group-loop errors in Surge.
+                    if _surge_has_path(adjacency, target, source):
+                        continue
+                    member_value = target_group
+                    adjacency.setdefault(source, set()).add(target)
+                if member_value not in members:
+                    members.append(member_value)
+            if not members:
+                for member in proxy_names + ["DIRECT"]:
+                    if member.casefold() == source:
+                        continue
+                    if member not in members:
+                        members.append(member)
+            group_lines.append(f"{safe_group_name} = select, {', '.join(members)}")
 
     rule_lines: list[str] = []
     if parsed_acl.rules:
