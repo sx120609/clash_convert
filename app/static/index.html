@@ -305,6 +305,8 @@
       margin-top: 12px;
       display: flex;
       gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     .warn {
@@ -455,10 +457,6 @@
             </div>
           </div>
 
-          <div class="actions">
-            <button class="primary" id="convertBtn" type="button">生成订阅链接</button>
-            <button id="copyBtn" type="button">复制链接</button>
-          </div>
         </section>
 
         <section class="panel">
@@ -466,6 +464,8 @@
           <div class="status" id="status">等待转换</div>
           <pre id="output"></pre>
           <div class="output-actions">
+            <button class="primary" id="convertBtn" type="button">生成订阅链接</button>
+            <button id="copyBtn" type="button">复制链接</button>
             <button id="openBtn" type="button">打开链接</button>
           </div>
           <div class="warn" id="warnBox" style="display: none"></div>
