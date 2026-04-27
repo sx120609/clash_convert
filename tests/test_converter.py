@@ -198,6 +198,90 @@ rules:
     assert "🎯 Select" not in members
 
 
+def test_render_surge_ss_keeps_obfs_related_options() -> None:
+    yaml_text = """
+proxies:
+  - name: ss-obfs
+    type: ss
+    server: ss.example.com
+    port: 8388
+    cipher: aes-128-gcm
+    password: pass
+    plugin: obfs-local
+    plugin-opts:
+      mode: tls
+      host: cdn.example.com
+      path: /ss
+      udp-port: "9443"
+"""
+    parsed = parse_subscription(yaml_text)
+    output, warnings, _ = convert_nodes(parsed.nodes, "surge")
+    assert warnings == []
+    line = next((item for item in output.splitlines() if item.startswith("ss-obfs = ss,")), "")
+    assert line
+    assert "obfs=tls" in line
+    assert "obfs-host=cdn.example.com" in line
+    assert "obfs-uri=/ss" in line
+    assert "udp-port=9443" in line
+
+
+def test_render_surge_ss_unsupported_plugin_warns() -> None:
+    yaml_text = """
+proxies:
+  - name: ss-plugin
+    type: ss
+    server: ss.example.com
+    port: 8388
+    cipher: aes-128-gcm
+    password: pass
+    plugin: v2ray-plugin
+"""
+    parsed = parse_subscription(yaml_text)
+    output, warnings, _ = convert_nodes(parsed.nodes, "surge")
+    assert "ss-plugin = ss, ss.example.com, 8388" in output
+    assert any("plugin 'v2ray-plugin' is not supported" in warning for warning in warnings)
+
+
+def test_render_surge_uses_https_and_socks5_tls_types() -> None:
+    text = "\n".join(
+        [
+            "https://u:p@proxy.example.com:8443?insecure=1&sni=proxy.example.com#http-node",
+            "socks5://user:pwd@socks.example.com:1080?security=tls&insecure=1&sni=socks.example.com#socks-node",
+        ]
+    )
+    parsed = parse_subscription(text)
+    output, warnings, _ = convert_nodes(parsed.nodes, "surge")
+    assert warnings == []
+    assert (
+        "http-node = https, proxy.example.com, 8443, username=u, password=p, sni=proxy.example.com, skip-cert-verify=true"
+        in output
+    )
+    assert (
+        "socks-node = socks5-tls, socks.example.com, 1080, username=user, password=pwd, sni=socks.example.com, skip-cert-verify=true"
+        in output
+    )
+
+
+def test_render_surge_vmess_keeps_supported_cipher() -> None:
+    payload = {
+        "v": "2",
+        "ps": "vmess-node",
+        "add": "vm.example.com",
+        "port": "443",
+        "id": "11111111-1111-1111-1111-111111111111",
+        "aid": "0",
+        "scy": "aes-128-gcm",
+        "net": "tcp",
+        "tls": "tls",
+        "sni": "vm.example.com",
+    }
+    encoded = base64.b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8")
+    parsed = parse_subscription(f"vmess://{encoded}")
+    output, warnings, _ = convert_nodes(parsed.nodes, "surge")
+    assert warnings == []
+    assert "encrypt-method=aes-128-gcm" in output
+
+
 def test_render_surge_anytls_proxy_entry() -> None:
     yaml_text = """
 proxies:

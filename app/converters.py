@@ -1052,18 +1052,77 @@ def _surge_ws_opts(params: dict[str, Any]) -> tuple[list[str], str | None]:
     return opts, None
 
 
+def _surge_get_plugin_opt(plugin_opts: dict[str, Any], *keys: str) -> str | None:
+    if not isinstance(plugin_opts, dict):
+        return None
+    normalized: dict[str, Any] = {}
+    for key, value in plugin_opts.items():
+        norm = str(key).strip().casefold().replace("_", "-")
+        if norm:
+            normalized[norm] = value
+    for key in keys:
+        norm = key.strip().casefold().replace("_", "-")
+        if norm in normalized and normalized[norm] not in (None, ""):
+            return str(normalized[norm]).strip()
+    return None
+
+
 def _build_surge_proxy_entry(node: ProxyNode, surge_name: str) -> tuple[str | None, str | None]:
     params = node.params
     opts: list[str]
 
     if node.type == "ss":
+        node_warnings: list[str] = []
         opts = [
             f"encrypt-method={_quote_surge_value(params.get('cipher', 'aes-128-gcm'))}",
             f"password={_quote_surge_value(params.get('password', ''))}",
-            "udp-relay=true",
+            f"udp-relay={str(bool(params.get('udp', True))).lower()}",
         ]
-        return f"{surge_name} = ss, {node.server}, {node.port}, {', '.join(opts)}", None
+        plugin = str(params.get("plugin", "")).strip().lower()
+        plugin_opts = params.get("plugin_opts") if isinstance(params.get("plugin_opts"), dict) else {}
+        if plugin and plugin not in {"obfs", "obfs-local", "simple-obfs"}:
+            node_warnings.append(f"{node.name}: ss plugin '{plugin}' is not supported by surge")
+
+        obfs_mode = (
+            str(params.get("obfs", "")).strip().lower()
+            or (_surge_get_plugin_opt(plugin_opts, "obfs", "mode") or "").lower()
+        )
+        obfs_host = (
+            str(params.get("obfs_host", "")).strip()
+            or str(params.get("obfs-host", "")).strip()
+            or (_surge_get_plugin_opt(plugin_opts, "obfs-host", "host") or "")
+        )
+        obfs_uri = (
+            str(params.get("obfs_uri", "")).strip()
+            or str(params.get("obfs-uri", "")).strip()
+            or (_surge_get_plugin_opt(plugin_opts, "obfs-uri", "uri", "path") or "")
+        )
+        udp_port_raw = (
+            params.get("udp_port")
+            or params.get("udp-port")
+            or _surge_get_plugin_opt(plugin_opts, "udp-port", "udp_port")
+        )
+        try:
+            udp_port = int(udp_port_raw) if udp_port_raw not in (None, "") else None
+        except Exception:
+            udp_port = None
+
+        if obfs_mode:
+            if obfs_mode in {"http", "tls"}:
+                opts.append(f"obfs={obfs_mode}")
+            else:
+                node_warnings.append(f"{node.name}: ss obfs mode '{obfs_mode}' is not supported by surge")
+        if obfs_host:
+            opts.append(f"obfs-host={_quote_surge_value(obfs_host)}")
+        if obfs_uri:
+            opts.append(f"obfs-uri={_quote_surge_value(obfs_uri)}")
+        if udp_port and udp_port > 0:
+            opts.append(f"udp-port={udp_port}")
+
+        warning = "; ".join(node_warnings) if node_warnings else None
+        return f"{surge_name} = ss, {node.server}, {node.port}, {', '.join(opts)}", warning
     if node.type == "vmess":
+        node_warnings: list[str] = []
         ws_opts, ws_warning = _surge_ws_opts(params)
         if ws_warning:
             return None, f"{node.name}: {ws_warning}"
@@ -1075,8 +1134,16 @@ def _build_surge_proxy_entry(node: ProxyNode, surge_name: str) -> tuple[str | No
             opts.append(f"sni={_quote_surge_value(params['sni'])}")
         if "skip_cert_verify" in params:
             opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
+        cipher = str(params.get("cipher", "")).strip().lower()
+        if cipher and cipher not in {"auto", "none"}:
+            if cipher in {"chacha20-ietf-poly1305", "aes-128-gcm"}:
+                opts.append(f"encrypt-method={cipher}")
+            else:
+                node_warnings.append(f"{node.name}: vmess cipher '{cipher}' is not supported by surge")
         opts.extend(ws_opts)
-        warning = f"{node.name}: surge vmess ignores alter_id" if ignore_alter_id else None
+        if ignore_alter_id:
+            node_warnings.append(f"{node.name}: surge vmess ignores alter_id")
+        warning = "; ".join(node_warnings) if node_warnings else None
         return f"{surge_name} = vmess, {node.server}, {node.port}, {', '.join(opts)}", warning
     if node.type == "trojan":
         ws_opts, ws_warning = _surge_ws_opts(params)
@@ -1102,30 +1169,32 @@ def _build_surge_proxy_entry(node: ProxyNode, surge_name: str) -> tuple[str | No
             opts.append(f"reuse={str(bool(params['reuse'])).lower()}")
         return f"{surge_name} = anytls, {node.server}, {node.port}, {', '.join(opts)}", None
     if node.type == "http":
+        protocol = "https" if params.get("tls") else "http"
         opts = []
         if params.get("username"):
             opts.append(f"username={_quote_surge_value(params['username'])}")
         if params.get("password"):
             opts.append(f"password={_quote_surge_value(params['password'])}")
-        if params.get("tls"):
-            opts.append("tls=true")
+        if params.get("tls") and params.get("sni"):
+            opts.append(f"sni={_quote_surge_value(params['sni'])}")
         if "skip_cert_verify" in params:
             opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
-        line = f"{surge_name} = http, {node.server}, {node.port}"
+        line = f"{surge_name} = {protocol}, {node.server}, {node.port}"
         if opts:
             line += f", {', '.join(opts)}"
         return line, None
     if node.type == "socks5":
+        protocol = "socks5-tls" if params.get("tls") else "socks5"
         opts = []
         if params.get("username"):
             opts.append(f"username={_quote_surge_value(params['username'])}")
         if params.get("password"):
             opts.append(f"password={_quote_surge_value(params['password'])}")
-        if params.get("tls"):
-            opts.append("tls=true")
+        if params.get("tls") and params.get("sni"):
+            opts.append(f"sni={_quote_surge_value(params['sni'])}")
         if "skip_cert_verify" in params:
             opts.append(f"skip-cert-verify={str(bool(params['skip_cert_verify'])).lower()}")
-        line = f"{surge_name} = socks5, {node.server}, {node.port}"
+        line = f"{surge_name} = {protocol}, {node.server}, {node.port}"
         if opts:
             line += f", {', '.join(opts)}"
         return line, None
