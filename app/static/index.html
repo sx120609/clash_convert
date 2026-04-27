@@ -8,21 +8,26 @@
   <meta name="description" content="在线订阅链接转换工具，支持 Mihomo/Clash、Sing-box、Surge 及通用 URI 格式互转。" />
   <style>
     :root {
-      --primary: #409eff;
-      --primary-hover: #66b1ff;
-      --bg: #f0f2f5;
+      --bg: #f4f7fb;
       --surface: #ffffff;
-      --text: #303133;
-      --text-secondary: #606266;
-      --text-muted: #909399;
-      --border: #dcdfe6;
-      --border-soft: #ebeef5;
-      --success: #67c23a;
-      --error: #f56c6c;
-      --warn-bg: #fdf6ec;
-      --warn-border: #faecd8;
-      --warn-text: #e6a23c;
-      --radius: 4px;
+      --surface-2: #f8fbff;
+      --line: #d9e3ee;
+      --line-strong: #c4d5e6;
+      --text: #1f2937;
+      --text-secondary: #4b5563;
+      --text-muted: #6b7280;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-soft: rgba(37, 99, 235, 0.12);
+      --success: #14804a;
+      --error: #b42318;
+      --warn-bg: #fff8eb;
+      --warn-border: #f6d9a8;
+      --warn-text: #9a6700;
+      --radius: 12px;
+      --radius-sm: 10px;
+      --shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+      --shadow-soft: 0 4px 16px rgba(15, 23, 42, 0.06);
     }
 
     *,
@@ -34,97 +39,93 @@
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: var(--bg);
+      font-family: "Source Han Sans SC", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 8% 10%, rgba(37, 99, 235, 0.08), transparent 32%),
+        radial-gradient(circle at 88% 12%, rgba(14, 165, 233, 0.08), transparent 30%),
+        var(--bg);
       color: var(--text);
-      line-height: 1.5;
+      line-height: 1.55;
     }
 
     .page {
-      max-width: 1180px;
-      margin: 20px auto;
-      padding: 0 14px;
+      max-width: 1220px;
+      margin: 26px auto;
+      padding: 0 16px;
     }
 
     .card {
       background: var(--surface);
-      border: 1px solid var(--border-soft);
+      border: 1px solid var(--line);
       border-radius: var(--radius);
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+      box-shadow: var(--shadow);
       overflow: hidden;
     }
 
     .card-header {
-      height: 56px;
-      padding: 0 18px;
-      border-bottom: 1px solid var(--border-soft);
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--line);
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
+      justify-content: flex-start;
+      gap: 10px;
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
+    }
+
+    .title-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
 
     .title {
-      font-size: 18px;
-      font-weight: 600;
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
       color: var(--text);
     }
 
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .icon-link {
-      text-decoration: none;
-      color: var(--text-secondary);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 6px 10px;
+    .subtitle {
+      margin: 0;
       font-size: 12px;
-      line-height: 1;
-      transition: all 0.18s ease;
-      background: #fff;
-    }
-
-    .icon-link:hover {
-      color: var(--primary);
-      border-color: var(--primary);
-      background: #ecf5ff;
+      color: var(--text-secondary);
     }
 
     .layout {
       display: grid;
-      grid-template-columns: 1.5fr 1fr;
+      grid-template-columns: 1.45fr 1fr;
       gap: 20px;
-      padding: 18px;
+      padding: 20px;
     }
 
     .panel {
-      border: 1px solid var(--border-soft);
-      border-radius: var(--radius);
-      padding: 14px;
-      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      background: var(--surface);
+      box-shadow: var(--shadow-soft);
     }
 
     .panel-title {
       margin: 0 0 12px;
-      font-size: 14px;
-      font-weight: 600;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
       color: var(--text);
     }
 
     .form-item {
       display: grid;
-      grid-template-columns: 140px 1fr;
-      gap: 10px;
+      grid-template-columns: 152px 1fr;
+      gap: 12px;
       align-items: start;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
 
     .form-label {
-      font-size: 14px;
+      font-size: 13px;
+      font-weight: 600;
       color: var(--text-secondary);
       padding-top: 8px;
     }
@@ -136,7 +137,7 @@
     .control textarea {
       width: 100%;
       font-family: inherit;
-      font-size: 13px;
+      font-size: 14px;
       color: var(--text);
     }
 
@@ -144,12 +145,20 @@
     .control input[type="url"],
     .control select,
     .control textarea {
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 8px 10px;
-      background: #fff;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      padding: 9px 12px;
+      background: var(--surface-2);
       outline: none;
-      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+    }
+
+    .control input[type="text"]:hover,
+    .control input[type="url"]:hover,
+    .control select:hover,
+    .control textarea:hover {
+      border-color: #b5c9de;
+      background: #ffffff;
     }
 
     .control input[type="text"]:focus,
@@ -157,11 +166,12 @@
     .control select:focus,
     .control textarea:focus {
       border-color: var(--primary);
-      box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.18);
+      box-shadow: 0 0 0 3px var(--primary-soft);
+      background: #ffffff;
     }
 
     .control textarea {
-      min-height: 84px;
+      min-height: 88px;
       resize: vertical;
     }
 
@@ -170,22 +180,33 @@
     }
 
     .radio-row {
-      display: inline-flex;
+      display: flex;
       align-items: center;
       flex-wrap: wrap;
-      gap: 14px;
-      padding-top: 6px;
+      gap: 8px;
+      padding-top: 4px;
     }
 
     .radio-row label,
     .check-row label {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
       cursor: pointer;
       font-size: 13px;
       color: var(--text);
       user-select: none;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: #fff;
+      padding: 6px 12px;
+      transition: border-color 0.18s ease, background-color 0.18s ease;
+    }
+
+    .radio-row label:hover,
+    .check-row label:hover {
+      border-color: var(--primary);
+      background: #f8fbff;
     }
 
     .radio-row input,
@@ -202,93 +223,97 @@
 
     .actions {
       display: flex;
-      gap: 8px;
+      gap: 10px;
       flex-wrap: wrap;
-      margin-top: 4px;
-      padding-left: 150px;
+      margin-top: 2px;
+      padding-left: 164px;
     }
 
     button {
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
       background: #fff;
       color: var(--text-secondary);
       font-family: inherit;
       font-size: 13px;
-      padding: 8px 14px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      padding: 9px 14px;
       cursor: pointer;
-      transition: all 0.18s ease;
+      transition: all 0.16s ease;
     }
 
     button:hover {
-      border-color: #c6e2ff;
+      border-color: #9ec5ff;
       color: var(--primary);
-      background: #ecf5ff;
+      background: #f4f8ff;
     }
 
     .primary {
       border-color: var(--primary);
       background: var(--primary);
       color: #fff;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.24);
     }
 
     .primary:hover {
       border-color: var(--primary-hover);
       background: var(--primary-hover);
       color: #fff;
+      box-shadow: 0 6px 14px rgba(37, 99, 235, 0.28);
     }
 
     .status {
-      border: 1px solid var(--border-soft);
-      border-radius: var(--radius);
-      background: #fafafa;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #f9fafb;
       color: var(--text-muted);
-      padding: 8px 10px;
-      margin-bottom: 10px;
+      padding: 9px 12px;
+      margin-bottom: 12px;
       font-size: 13px;
     }
 
     .status.success {
-      background: #f0f9eb;
-      border-color: #e1f3d8;
+      background: #eefbf3;
+      border-color: #cdeed9;
       color: var(--success);
     }
 
     .status.error {
-      background: #fef0f0;
-      border-color: #fde2e2;
+      background: #fff2f1;
+      border-color: #f8d0cc;
       color: var(--error);
     }
 
     pre {
       margin: 0;
-      min-height: 300px;
+      min-height: 318px;
       max-height: 560px;
       overflow: auto;
       white-space: pre-wrap;
       word-break: break-all;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: #f5f7fa;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: #f7fafe;
       color: var(--text);
-      font-size: 12px;
-      line-height: 1.6;
-      padding: 10px;
+      font-size: 12.5px;
+      line-height: 1.65;
+      padding: 12px;
     }
 
     .output-actions {
-      margin-top: 10px;
+      margin-top: 12px;
       display: flex;
       gap: 8px;
     }
 
     .warn {
-      margin-top: 10px;
-      padding: 10px;
+      margin-top: 12px;
+      padding: 10px 12px;
       font-size: 12px;
       line-height: 1.6;
       border: 1px solid var(--warn-border);
-      border-radius: var(--radius);
+      border-radius: 9px;
       background: var(--warn-bg);
       color: var(--warn-text);
       white-space: pre-wrap;
@@ -299,7 +324,7 @@
       text-align: center;
       color: var(--text-muted);
       font-size: 12px;
-      margin: 14px 0 0;
+      margin: 16px 0 0;
     }
 
     @media (max-width: 980px) {
@@ -312,6 +337,10 @@
         gap: 6px;
       }
 
+      .card-header {
+        padding: 14px 16px;
+      }
+
       .form-label {
         padding-top: 0;
       }
@@ -321,7 +350,7 @@
       }
 
       pre {
-        min-height: 220px;
+        min-height: 250px;
       }
     }
   </style>
@@ -331,10 +360,9 @@
   <div class="page">
     <div class="card">
       <div class="card-header">
-        <div class="title">订阅转换</div>
-        <div class="header-actions">
-          <a class="icon-link" href="https://github.com/acl4ssr-sub/acl4ssr-sub.github.io" target="_blank" rel="noopener">GitHub</a>
-          <a class="icon-link" href="https://t.me/ACL4SSR" target="_blank" rel="noopener">Telegram</a>
+        <div class="title-wrap">
+          <h1 class="title">订阅转换</h1>
+          <p class="subtitle">统一转换为 Mihomo / Sing-box / Surge / URI 输出格式</p>
         </div>
       </div>
 
@@ -438,7 +466,7 @@
       </div>
     </div>
 
-    <div class="footer">ACL4SSR-sub 风格界面 · Powered by FastAPI</div>
+    <div class="footer">Subscription Converter · Powered by FastAPI</div>
   </div>
 
   <script>
